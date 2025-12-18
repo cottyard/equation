@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Equation Solver Training</title>
+    <title>解方程训练</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="side-panel.css">
     <script>
@@ -25,27 +25,26 @@
 </head>
 <body>
     <div class="container">
-        <h1>Equation Solver Training</h1>
+        <h1>解方程训练</h1>
         
         <div class="settings-panel">
-            <label for="num-vars">Number of Variables (1-4):</label>
+            <label for="num-vars">变量数量 (1-4):</label>
             <input type="number" id="num-vars" min="1" max="4" value="2">
-            <button id="generate-btn">Random Equations</button>
-            <button id="custom-btn" style="background-color: #9b59b6;">Custom Equations</button>
+            <button id="generate-btn">生成方程</button>
+            <button id="custom-btn" style="background-color: #9b59b6;">自定义方程</button>
         </div>
 
         <div id="custom-panel" class="side-panel hidden">
-            <h3>Custom Equations</h3>
-            <p>Enter equations:</p>
+            <h3>自定义方程</h3>
             <div class="input-group">
-                <input type="text" class="custom-eq-input" placeholder="Equation 1">
-                <input type="text" class="custom-eq-input" placeholder="Equation 2">
-                <input type="text" class="custom-eq-input" placeholder="Equation 3">
-                <input type="text" class="custom-eq-input" placeholder="Equation 4">
+                <input type="text" class="custom-eq-input" placeholder="方程 1">
+                <input type="text" class="custom-eq-input" placeholder="方程 2">
+                <input type="text" class="custom-eq-input" placeholder="方程 3">
+                <input type="text" class="custom-eq-input" placeholder="方程 4">
             </div>
             <div class="panel-actions">
-                <button id="start-custom-btn">Start Game</button>
-                <button id="close-custom-btn" style="background-color: #95a5a6;">Cancel</button>
+                <button id="start-custom-btn">开始</button>
+                <button id="close-custom-btn" style="background-color: #95a5a6;">取消</button>
             </div>
         </div>
 
@@ -55,42 +54,43 @@
             </div>
 
             <div class="controls-panel">
-                <h3>Operations</h3>
+                <h3>操作</h3>
                 <div class="control-group">
-                    <label>Target Equation:</label>
+                    <label>目标方程:</label>
                     <div id="target-eq-list" class="eq-btn-list"></div>
                 </div>
 
                 <div class="toolbar">
                     <div class="toolbar-section">
-                        <h4>Term Operations</h4>
+                        <h4>项操作</h4>
                         <div class="control-group" id="term-input-group">
-                            <input type="text" id="term-input" placeholder="Enter term (e.g. 3, 2x)">
+                            <input type="text" id="term-input" placeholder="输入项 (例如 3, 2x)">
                         </div>
                         <div class="button-group">
-                            <button class="op-btn" data-op="add">+</button>
-                            <button class="op-btn" data-op="subtract">-</button>
-                            <button class="op-btn" data-op="multiply">×</button>
-                            <button class="op-btn" data-op="divide">÷</button>
+                            <button class="op-btn" data-op="add">加 (+)</button>
+                            <button class="op-btn" data-op="subtract">减 (-)</button>
+                            <button class="op-btn" data-op="multiply">乘 (×)</button>
+                            <button class="op-btn" data-op="divide">除 (÷)</button>
                         </div>
                     </div>
 
                     <div class="toolbar-section">
-                        <h4>Equation Operations</h4>
+                        <h4>方程操作</h4>
                         <div class="control-group" id="second-eq-group">
-                            <label>Second Equation:</label>
+                            <label>第二方程:</label>
                             <div id="second-eq-list" class="eq-btn-list"></div>
                         </div>
                         <div class="button-group">
-                            <button class="op-btn" data-op="add-eq">+</button>
-                            <button class="op-btn" data-op="sub-eq">-</button>
-                            <button class="op-btn" data-op="substitute">Substitute</button>
+                            <button class="op-btn" data-op="add-eq">加方程</button>
+                            <button class="op-btn" data-op="sub-eq">减方程</button>
+                            <button class="op-btn" data-op="substitute">代入</button>
                         </div>
                     </div>
 
                     <div class="toolbar-section">
-                        <h4>Other</h4>
-                        <button class="op-btn" data-op="flip">Flip Sides</button>
+                        <h4>其他</h4>
+                        <button class="op-btn" data-op="flip">交换左右</button>
+                        <button class="op-btn" data-op="delete" style="background-color: #e74c3c; color: white;">删除</button>
                     </div>
                 </div>
 
@@ -99,7 +99,7 @@
         </div>
 
         <div id="congrats-banner" class="hidden">
-            <h2>Congratulations! You solved the system!</h2>
+            <h2>恭喜！你解出了方程组！</h2>
         </div>
     </div>
 

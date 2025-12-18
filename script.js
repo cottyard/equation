@@ -160,7 +160,7 @@ function updateCustomPreview() {
 
 function startCustomGame() {
     if (equations.length === 0) {
-        alert("Please enter at least one valid equation.");
+        alert("请输入至少一个有效的方程。");
         return;
     }
     
@@ -174,7 +174,7 @@ function startCustomGame() {
 
     // Validate variables count
     if (variables.length > 4) {
-        alert("Too many variables! Max 4 allowed.");
+        alert("变量太多！最多允许4个。");
         return;
     }
 
@@ -543,7 +543,7 @@ function handleOperation(op) {
     errorMsg.textContent = '';
     
     if (selectedTargetId === null) {
-        errorMsg.textContent = 'Please select a target equation.';
+        errorMsg.textContent = '请选择目标方程。';
         return;
     }
 
@@ -556,9 +556,12 @@ function handleOperation(op) {
             const temp = eq.lhs;
             eq.lhs = eq.rhs;
             eq.rhs = temp;
+        } else if (op === 'delete') {
+            equations.splice(targetIndex, 1);
+            selectedTargetId = null;
         } else if (op === 'substitute') {
             if (selectedSecondId === null) {
-                errorMsg.textContent = 'Please select a second equation for substitution.';
+                errorMsg.textContent = '请选择用于代入的第二个方程。';
                 return;
             }
             const secondIndex = equations.findIndex(e => e.id === selectedSecondId);
@@ -576,7 +579,7 @@ function handleOperation(op) {
                 variable = eq1.rhs.name;
                 value = eq1.lhs;
             } else {
-                errorMsg.textContent = 'Target equation must be solved (e.g. x=5) to substitute.';
+                errorMsg.textContent = '目标方程必须已解出 (例如 x=5) 才能代入。';
                 return;
             }
 
@@ -599,7 +602,7 @@ function handleOperation(op) {
 
         } else if (op === 'add-eq' || op === 'sub-eq') {
             if (selectedSecondId === null) {
-                errorMsg.textContent = 'Please select a second equation.';
+                errorMsg.textContent = '请选择第二个方程。';
                 return;
             }
             const secondIndex = equations.findIndex(e => e.id === selectedSecondId);
@@ -626,7 +629,7 @@ function handleOperation(op) {
             // Term operations
             const termStr = termInput.value.trim();
             if (!termStr) {
-                errorMsg.textContent = 'Please enter a term.';
+                errorMsg.textContent = '请输入一项。';
                 return;
             }
 
@@ -644,7 +647,7 @@ function handleOperation(op) {
                 // In custom mode, we might have variables not in the initial list if user added them later?
                 // But variables list is updated on startCustomGame.
                 // So this check is still valid.
-                errorMsg.textContent = `Invalid variables: ${invalidVars.join(', ')}. Only ${variables.join(', ')} allowed.`;
+                errorMsg.textContent = `无效变量: ${invalidVars.join(', ')}. 仅允许 ${variables.join(', ')}。`;
                 return;
             }
 
@@ -676,7 +679,7 @@ function handleOperation(op) {
 
     } catch (err) {
         console.error(err);
-        errorMsg.textContent = 'Invalid operation or term. ' + err.message;
+        errorMsg.textContent = '无效的操作或项。 ' + err.message;
     }
 }
 
