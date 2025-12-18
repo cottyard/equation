@@ -40,8 +40,8 @@
             <div class="controls-panel">
                 <h3>Operations</h3>
                 <div class="control-group">
-                    <label for="target-eq">Target Equation:</label>
-                    <select id="target-eq"></select>
+                    <label>Target Equation:</label>
+                    <div id="target-eq-list" class="eq-btn-list"></div>
                 </div>
 
                 <div class="toolbar">
@@ -61,11 +61,13 @@
                     <div class="toolbar-section">
                         <h4>Equation Operations</h4>
                         <div class="control-group" id="second-eq-group">
-                            <select id="second-eq"></select>
+                            <label>Second Equation:</label>
+                            <div id="second-eq-list" class="eq-btn-list"></div>
                         </div>
                         <div class="button-group">
                             <button class="op-btn" data-op="add-eq">Add Eq</button>
                             <button class="op-btn" data-op="sub-eq">Sub Eq</button>
+                            <button class="op-btn" data-op="substitute">Substitute</button>
                         </div>
                     </div>
 

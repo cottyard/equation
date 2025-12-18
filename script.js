@@ -16,11 +16,16 @@ const numVarsInput = document.getElementById('num-vars');
 const generateBtn = document.getElementById('generate-btn');
 const gameArea = document.getElementById('game-area');
 const equationsList = document.getElementById('equations-list');
-const targetEqSelect = document.getElementById('target-eq');
-const secondEqSelect = document.getElementById('second-eq');
+const targetEqList = document.getElementById('target-eq-list');
+const secondEqList = document.getElementById('second-eq-list');
 const termInput = document.getElementById('term-input');
 const errorMsg = document.getElementById('error-msg');
 const congratsBanner = document.getElementById('congrats-banner');
+
+let selectedTargetId = null;
+let selectedSecondId = null;
+
+const subBtn = document.querySelector('button[data-op="substitute"]');
 
 // Event Listeners
 generateBtn.addEventListener('click', startNewGame);
@@ -75,7 +80,7 @@ function startNewGame() {
 
     gameArea.classList.remove('hidden');
     renderEquations();
-    updateSelects();
+    updateEquationSelectors();
 }
 
 function getRandomRational() {
@@ -182,6 +187,66 @@ function generateEquation() {
     });
 }
 
+function cleanEquationNode(node) {
+    // 1. Run standard simplify
+    let res = simplify(node);
+    
+    // 2. Custom transform to handle unary minus on constants and terms
+    res = res.transform(function (n) {
+        if (n.type === 'OperatorNode' && n.fn === 'unaryMinus') {
+            const arg = n.args[0];
+            
+            // Case: -Constant
+            if (arg.isConstantNode) {
+                const val = arg.value;
+                if (typeof val === 'number') {
+                    return new math.ConstantNode(-val);
+                }
+                if (val && typeof val.mul === 'function') { // Fraction
+                    return new math.ConstantNode(val.mul(-1));
+                }
+            }
+            
+            // Case: -(A * B) -> (-A) * B if A is constant
+            if (arg.type === 'OperatorNode' && arg.op === '*') {
+                if (arg.args[0].isConstantNode) {
+                    const val = arg.args[0].value;
+                    let newVal;
+                    if (typeof val === 'number') newVal = -val;
+                    else if (val && typeof val.mul === 'function') newVal = val.mul(-1);
+                    
+                    if (newVal !== undefined) {
+                        return new math.OperatorNode('*', 'multiply', [
+                            new math.ConstantNode(newVal),
+                            arg.args[1]
+                        ]);
+                    }
+                }
+            }
+
+            // Case: -(A / B) -> (-A) / B if A is constant
+            if (arg.type === 'OperatorNode' && arg.op === '/') {
+                if (arg.args[0].isConstantNode) {
+                    const val = arg.args[0].value;
+                    let newVal;
+                    if (typeof val === 'number') newVal = -val;
+                    else if (val && typeof val.mul === 'function') newVal = val.mul(-1);
+                    
+                    if (newVal !== undefined) {
+                        return new math.OperatorNode('/', 'divide', [
+                            new math.ConstantNode(newVal),
+                            arg.args[1]
+                        ]);
+                    }
+                }
+            }
+        }
+        return n;
+    });
+    
+    return res;
+}
+
 function renderEquations() {
     equationsList.innerHTML = '';
     equations.forEach(eq => {
@@ -191,6 +256,10 @@ function renderEquations() {
 
         const div = document.createElement('div');
         div.className = 'equation-item';
+        div.dataset.id = eq.id;
+        if (eq.id === selectedTargetId) {
+            div.classList.add('selected-target');
+        }
         
         // Check if solved (Variable = Constant or Constant = Variable)
         const isSolved = (eq.lhs.isSymbolNode && eq.rhs.isConstantNode) || 
@@ -226,8 +295,21 @@ function renderEquations() {
 
         // Fix negative fractions: \frac{-n}{d} -> -\frac{n}{d}
         const fixNegFrac = (tex) => tex.replace(/\\frac\{-(\d+)\}/g, '-\\frac{$1}');
-        lhsTex = fixNegFrac(lhsTex);
-        rhsTex = fixNegFrac(rhsTex);
+        // Fix dot: 2 \cdot x -> 2x
+        const fixDot = (tex) => tex.replace(/(\d|\})\s*\\cdot\s*([a-z])/g, '$1$2');
+        // Fix plus minus: + - -> -
+        const fixPlusMinus = (tex) => tex.replace(/\+\s*-/g, '-');
+        
+        const processTex = (tex) => {
+            let t = tex;
+            t = fixNegFrac(t);
+            t = fixDot(t);
+            t = fixPlusMinus(t);
+            return t;
+        };
+
+        lhsTex = processTex(lhsTex);
+        rhsTex = processTex(rhsTex);
 
         mathDiv.innerHTML = `\\[ ${lhsTex} = ${rhsTex} \\]`;
         
@@ -266,7 +348,7 @@ function handleDistribute(eqId, nodeId) {
     }
     
     renderEquations();
-    updateSelects();
+    updateEquationSelectors();
     checkWin();
 }
 
@@ -287,39 +369,79 @@ function distributeNode(node) {
     });
     
     const newNode = new math.OperatorNode(addNode.op, addNode.fn, newArgs);
-    return simplify(newNode);
+    return cleanEquationNode(simplify(newNode));
 }
 
-function updateSelects() {
-    // Save current selections
-    const targetVal = targetEqSelect.value;
-    const secondVal = secondEqSelect.value;
+function isValue(node) {
+    return node.isConstantNode;
+}
 
-    targetEqSelect.innerHTML = '';
-    secondEqSelect.innerHTML = '';
+function updateEquationSelectors() {
+    // Helper to create button list
+    const createButtons = (container, selectedId, onSelect) => {
+        container.innerHTML = '';
+        equations.forEach(eq => {
+            const btn = document.createElement('button');
+            btn.className = 'eq-select-btn';
+            if (eq.id === selectedId) btn.classList.add('selected');
+            btn.textContent = `(${eq.id})`;
+            btn.onclick = () => onSelect(eq.id);
+            container.appendChild(btn);
+        });
+    };
 
-    equations.forEach(eq => {
-        const opt1 = document.createElement('option');
-        opt1.value = eq.id;
-        opt1.textContent = `Equation (${eq.id})`;
-        targetEqSelect.appendChild(opt1);
-
-        const opt2 = document.createElement('option');
-        opt2.value = eq.id;
-        opt2.textContent = `Equation (${eq.id})`;
-        secondEqSelect.appendChild(opt2);
+    createButtons(targetEqList, selectedTargetId, (id) => {
+        selectedTargetId = id;
+        updateEquationSelectors();
+        updateEquationHighlights();
     });
 
-    // Restore selections if possible
-    if (targetVal) targetEqSelect.value = targetVal;
-    if (secondVal) secondEqSelect.value = secondVal;
+    createButtons(secondEqList, selectedSecondId, (id) => {
+        selectedSecondId = id;
+        updateEquationSelectors();
+    });
+
+    // Update substitute button visibility
+    if (subBtn) {
+        let showSub = false;
+        if (selectedTargetId !== null) {
+            const eq = equations.find(e => e.id === selectedTargetId);
+            if (eq) {
+                const isSolved = (eq.lhs.isSymbolNode && isValue(eq.rhs)) || 
+                                 (eq.rhs.isSymbolNode && isValue(eq.lhs));
+                if (isSolved) showSub = true;
+            }
+        }
+        
+        if (showSub) {
+            subBtn.style.display = 'inline-block';
+        } else {
+            subBtn.style.display = 'none';
+        }
+    }
+}
+
+function updateEquationHighlights() {
+    const items = equationsList.querySelectorAll('.equation-item');
+    items.forEach(item => {
+        const id = parseInt(item.dataset.id);
+        if (id === selectedTargetId) {
+            item.classList.add('selected-target');
+        } else {
+            item.classList.remove('selected-target');
+        }
+    });
 }
 
 function handleOperation(op) {
     errorMsg.textContent = '';
-    const targetId = parseInt(targetEqSelect.value);
-    const targetIndex = equations.findIndex(e => e.id === targetId);
     
+    if (selectedTargetId === null) {
+        errorMsg.textContent = 'Please select a target equation.';
+        return;
+    }
+
+    const targetIndex = equations.findIndex(e => e.id === selectedTargetId);
     if (targetIndex === -1) return;
 
     try {
@@ -328,9 +450,53 @@ function handleOperation(op) {
             const temp = eq.lhs;
             eq.lhs = eq.rhs;
             eq.rhs = temp;
+        } else if (op === 'substitute') {
+            if (selectedSecondId === null) {
+                errorMsg.textContent = 'Please select a second equation for substitution.';
+                return;
+            }
+            const secondIndex = equations.findIndex(e => e.id === selectedSecondId);
+            if (secondIndex === -1) return;
+
+            const eq1 = equations[targetIndex]; // The solved equation (x=val)
+            const eq2 = equations[secondIndex]; // The target to substitute into
+
+            // Check if eq1 is solved
+            let variable, value;
+            if (eq1.lhs.isSymbolNode && isValue(eq1.rhs)) {
+                variable = eq1.lhs.name;
+                value = eq1.rhs;
+            } else if (eq1.rhs.isSymbolNode && isValue(eq1.lhs)) {
+                variable = eq1.rhs.name;
+                value = eq1.lhs;
+            } else {
+                errorMsg.textContent = 'Target equation must be solved (e.g. x=5) to substitute.';
+                return;
+            }
+
+            // Perform substitution on eq2
+            const subCallback = function (node, path, parent) {
+                if (node.isSymbolNode && node.name === variable) {
+                    return value.clone();
+                }
+                return node;
+            };
+
+            const newLhs = eq2.lhs.transform(subCallback);
+            const newRhs = eq2.rhs.transform(subCallback);
+
+            equations.push({
+                id: nextEqId++,
+                lhs: cleanEquationNode(simplify(newLhs)),
+                rhs: cleanEquationNode(simplify(newRhs))
+            });
+
         } else if (op === 'add-eq' || op === 'sub-eq') {
-            const secondId = parseInt(secondEqSelect.value);
-            const secondIndex = equations.findIndex(e => e.id === secondId);
+            if (selectedSecondId === null) {
+                errorMsg.textContent = 'Please select a second equation.';
+                return;
+            }
+            const secondIndex = equations.findIndex(e => e.id === selectedSecondId);
             if (secondIndex === -1) return;
 
             const eq1 = equations[targetIndex];
@@ -347,8 +513,8 @@ function handleOperation(op) {
 
             equations.push({
                 id: nextEqId++,
-                lhs: simplify(newLhs),
-                rhs: simplify(newRhs)
+                lhs: cleanEquationNode(simplify(newLhs)),
+                rhs: cleanEquationNode(simplify(newRhs))
             });
         } else {
             // Term operations
@@ -391,12 +557,12 @@ function handleOperation(op) {
                 newRhs = new math.OperatorNode('/', 'divide', [eq.rhs, termNode]);
             }
 
-            eq.lhs = simplify(newLhs);
-            eq.rhs = simplify(newRhs);
+            eq.lhs = cleanEquationNode(simplify(newLhs));
+            eq.rhs = cleanEquationNode(simplify(newRhs));
         }
 
         renderEquations();
-        updateSelects();
+        updateEquationSelectors();
         checkWin();
 
     } catch (err) {
