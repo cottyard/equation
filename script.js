@@ -27,8 +27,42 @@ let selectedSecondId = null;
 
 const subBtn = document.querySelector('button[data-op="substitute"]');
 
+// Custom Equations Elements
+const customBtn = document.getElementById('custom-btn');
+const customPanel = document.getElementById('custom-panel');
+const startCustomBtn = document.getElementById('start-custom-btn');
+const closeCustomBtn = document.getElementById('close-custom-btn');
+const customInputs = document.querySelectorAll('.custom-eq-input');
+
 // Event Listeners
 generateBtn.addEventListener('click', startNewGame);
+
+customBtn.addEventListener('click', () => {
+    customPanel.classList.remove('hidden');
+    gameArea.classList.remove('hidden'); // Show game area for preview
+    equationsList.innerHTML = ''; // Clear previous
+    equations = [];
+    nextEqId = 1;
+    // Clear inputs
+    customInputs.forEach(input => input.value = '');
+    
+    // Reset variables to empty so we don't have old state
+    variables = [];
+});
+
+closeCustomBtn.addEventListener('click', () => {
+    customPanel.classList.add('hidden');
+    gameArea.classList.add('hidden');
+    // Clear equations if cancelled
+    equations = [];
+    renderEquations();
+});
+
+startCustomBtn.addEventListener('click', startCustomGame);
+
+customInputs.forEach(input => {
+    input.addEventListener('input', updateCustomPreview);
+});
 
 // Toolbar buttons
 document.querySelectorAll('.op-btn').forEach(btn => {
@@ -64,7 +98,9 @@ function startNewGame() {
     solution = {};
     congratsBanner.classList.add('hidden');
     errorMsg.textContent = '';
-
+    customPanel.classList.add('hidden'); // Ensure custom panel is closed
+    gameArea.classList.add('hidden'); // Hide game area initially until generated
+    
     // Generate random integer solution
     variables.forEach(v => {
         // Random integer between -10 and 10, non-zero preferred
@@ -80,6 +116,77 @@ function startNewGame() {
 
     gameArea.classList.remove('hidden');
     renderEquations();
+    updateEquationSelectors();
+}
+
+function updateCustomPreview() {
+    equations = [];
+    nextEqId = 1;
+    const foundVars = new Set();
+
+    customInputs.forEach(input => {
+        const text = input.value.trim();
+        if (!text) return;
+
+        try {
+            const parts = text.split('=');
+            if (parts.length !== 2) return; // Incomplete
+
+            const lhsNode = parse(parts[0]);
+            const rhsNode = parse(parts[1]);
+
+            // Collect variables
+            lhsNode.traverse(n => { if (n.isSymbolNode) foundVars.add(n.name); });
+            rhsNode.traverse(n => { if (n.isSymbolNode) foundVars.add(n.name); });
+
+            equations.push({
+                id: nextEqId++,
+                lhs: cleanEquationNode(simplify(lhsNode)),
+                rhs: cleanEquationNode(simplify(rhsNode))
+            });
+        } catch (e) {
+            // Ignore parse errors during typing
+        }
+    });
+
+    // Update variables list for preview rendering context if needed, 
+    // but mainly we just want to show the equations.
+    // However, renderEquations doesn't depend on 'variables' array, only 'equations'.
+    // But 'variables' is used for validation in handleOperation.
+    // We will update 'variables' officially in startCustomGame.
+    
+    renderEquations();
+}
+
+function startCustomGame() {
+    if (equations.length === 0) {
+        alert("Please enter at least one valid equation.");
+        return;
+    }
+    
+    // Extract variables again to be sure
+    const foundVars = new Set();
+    equations.forEach(eq => {
+        eq.lhs.traverse(n => { if (n.isSymbolNode) foundVars.add(n.name); });
+        eq.rhs.traverse(n => { if (n.isSymbolNode) foundVars.add(n.name); });
+    });
+    variables = Array.from(foundVars);
+
+    // Validate variables count
+    if (variables.length > 4) {
+        alert("Too many variables! Max 4 allowed.");
+        return;
+    }
+
+    // We don't know the solution, so we clear it.
+    // checkWin will need to handle this.
+    solution = {}; 
+    
+    customPanel.classList.add('hidden');
+    gameArea.classList.remove('hidden');
+    congratsBanner.classList.add('hidden');
+    errorMsg.textContent = '';
+    
     updateEquationSelectors();
 }
 
@@ -186,7 +293,6 @@ function generateEquation() {
         rhs: parse(rhsExpr)
     });
 }
-
 function cleanEquationNode(node) {
     // 1. Run standard simplify
     let res = simplify(node);
@@ -535,6 +641,9 @@ function handleOperation(op) {
             
             const invalidVars = symbols.filter(s => !variables.includes(s));
             if (invalidVars.length > 0) {
+                // In custom mode, we might have variables not in the initial list if user added them later?
+                // But variables list is updated on startCustomGame.
+                // So this check is still valid.
                 errorMsg.textContent = `Invalid variables: ${invalidVars.join(', ')}. Only ${variables.join(', ')} allowed.`;
                 return;
             }
@@ -596,8 +705,13 @@ function checkWin() {
                 // Use math.evaluate to handle Fractions
                 try {
                     const val = eq.rhs.compile().evaluate();
-                    const sol = solution[eq.lhs.name];
-                    if (math.abs(math.subtract(val, sol)) < 1e-9) {
+                    // If solution is known, verify it. Otherwise just accept isolation.
+                    if (solution && solution[eq.lhs.name] !== undefined) {
+                        const sol = solution[eq.lhs.name];
+                        if (math.abs(math.subtract(val, sol)) < 1e-9) {
+                            foundVars.add(eq.lhs.name);
+                        }
+                    } else {
                         foundVars.add(eq.lhs.name);
                     }
                 } catch (e) { console.log(e); }
@@ -608,8 +722,13 @@ function checkWin() {
             if (variables.includes(eq.rhs.name)) {
                 try {
                     const val = eq.lhs.compile().evaluate();
-                    const sol = solution[eq.rhs.name];
-                    if (math.abs(math.subtract(val, sol)) < 1e-9) {
+                    // If solution is known, verify it. Otherwise just accept isolation.
+                    if (solution && solution[eq.rhs.name] !== undefined) {
+                        const sol = solution[eq.rhs.name];
+                        if (math.abs(math.subtract(val, sol)) < 1e-9) {
+                            foundVars.add(eq.rhs.name);
+                        }
+                    } else {
                         foundVars.add(eq.rhs.name);
                     }
                 } catch (e) { console.log(e); }
