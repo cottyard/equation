@@ -368,8 +368,8 @@ function renderEquations() {
         }
         
         // Check if solved (Variable = Constant or Constant = Variable)
-        const isSolved = (eq.lhs.isSymbolNode && eq.rhs.isConstantNode) || 
-                         (eq.rhs.isSymbolNode && eq.lhs.isConstantNode);
+        const isSolved = (eq.lhs.isSymbolNode && isValue(eq.rhs)) || 
+                         (eq.rhs.isSymbolNode && isValue(eq.lhs));
         
         if (isSolved) {
             div.classList.add('solved');
@@ -479,7 +479,11 @@ function distributeNode(node) {
 }
 
 function isValue(node) {
-    return node.isConstantNode;
+    let hasSymbol = false;
+    node.traverse(n => {
+        if (n.isSymbolNode) hasSymbol = true;
+    });
+    return !hasSymbol;
 }
 
 function updateEquationSelectors() {
@@ -692,7 +696,7 @@ function checkWin() {
 
     equations.forEach(eq => {
         // Check LHS = Symbol, RHS = Constant
-        if (eq.lhs.isSymbolNode && eq.rhs.isConstantNode) {
+        if (eq.lhs.isSymbolNode && isValue(eq.rhs)) {
             // Check if value matches solution (optional, but good for verification)
             // But the game is just to isolate variables.
             // Let's just check if it's isolated.
@@ -721,7 +725,7 @@ function checkWin() {
             }
         }
         // Check RHS = Symbol, LHS = Constant
-        else if (eq.rhs.isSymbolNode && eq.lhs.isConstantNode) {
+        else if (eq.rhs.isSymbolNode && isValue(eq.lhs)) {
             if (variables.includes(eq.rhs.name)) {
                 try {
                     const val = eq.lhs.compile().evaluate();
