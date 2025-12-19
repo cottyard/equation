@@ -141,8 +141,8 @@ function updateCustomPreview() {
 
             equations.push({
                 id: nextEqId++,
-                lhs: cleanEquationNode(simplify(lhsNode)),
-                rhs: cleanEquationNode(simplify(rhsNode))
+                lhs: cleanEquationNode(lhsNode),
+                rhs: cleanEquationNode(rhsNode)
             });
         } catch (e) {
             // Ignore parse errors during typing
@@ -347,9 +347,204 @@ function postProcessNode(node) {
     });
 }
 
+function foldConstants(node) {
+    // 1. Recurse on children first (Bottom-Up)
+    if (node.args) {
+        node.args = node.args.map(arg => foldConstants(arg));
+    } else if (node.content) {
+        node.content = foldConstants(node.content);
+    }
+
+    // 2. Helper: Check if node is a pure constant tree
+    if (isPureConstant(node)) {
+        return evaluateConstantNode(node);
+    }
+
+    // 3. Helper: Extract Linear Term { coeff, symbol }
+    // Returns null if not a linear term
+    const linear = getLinearTerm(node);
+    if (linear) {
+        const { coeff, symbol } = linear;
+        
+        // 4. Cleanup and Return Canonical Form
+        // If coeff is 0 -> Return 0
+        if (isZero(coeff)) {
+            return new math.ConstantNode(0);
+        }
+        // If coeff is 1 -> Return symbol
+        if (isOne(coeff)) {
+            return symbol;
+        }
+        // If coeff is -1 -> Return -symbol
+        if (isMinusOne(coeff)) {
+            return new math.OperatorNode('-', 'unaryMinus', [symbol]);
+        }
+        // Return coeff * symbol
+        return new math.OperatorNode('*', 'multiply', [coeff, symbol]);
+    }
+
+    // 5. Handle Binary Addition/Subtraction Identities (x + 0, 0 + x, x - 0)
+    if (node.op === '+') {
+        if (isZeroNode(node.args[0])) return node.args[1];
+        if (isZeroNode(node.args[1])) return node.args[0];
+    }
+    if (node.op === '-') {
+        if (node.args.length === 2) {
+            if (isZeroNode(node.args[1])) return node.args[0];
+            if (isZeroNode(node.args[0])) return new math.OperatorNode('-', 'unaryMinus', [node.args[1]]);
+        }
+    }
+    
+    // Handle Parenthesis around constant
+    if (node.type === 'ParenthesisNode' && node.content.isConstantNode) {
+        return node.content;
+    }
+
+    return node;
+}
+
+// --- Helpers ---
+
+function isPureConstant(node) {
+    if (node.isConstantNode) return true;
+    if (node.isSymbolNode) return false;
+    if (node.args) {
+        return node.args.every(isPureConstant);
+    }
+    if (node.content) {
+        return isPureConstant(node.content);
+    }
+    return false;
+}
+
+function evaluateConstantNode(node) {
+    try {
+        // Convert numbers to fractions for precision
+        const transformToFraction = (n) => {
+            if (n.isConstantNode && typeof n.value === 'number') {
+                return new math.ConstantNode(math.fraction(n.value));
+            }
+            if (n.args) n.args = n.args.map(transformToFraction);
+            if (n.content) n.content = transformToFraction(n.content);
+            return n;
+        };
+        
+        const temp = node.clone();
+        transformToFraction(temp);
+        const res = temp.compile().evaluate();
+        return new math.ConstantNode(res);
+    } catch (e) {
+        return node;
+    }
+}
+
+function getLinearTerm(node) {
+    // Returns { coeff: ConstantNode, symbol: SymbolNode } or null
+    
+    // 1. Base Case: Symbol
+    if (node.isSymbolNode) {
+        return { coeff: new math.ConstantNode(1), symbol: node };
+    }
+    
+    // Handle Parenthesis
+    if (node.type === 'ParenthesisNode') {
+        return getLinearTerm(node.content);
+    }
+    
+    if (node.type !== 'OperatorNode') return null;
+    
+    // 3. Operations
+    const args = node.args;
+    
+    // Unary Minus
+    if (node.op === '-' && args.length === 1) {
+        const l = getLinearTerm(args[0]);
+        if (l) {
+            // - (k * x) -> (-k) * x
+            return { coeff: neg(l.coeff), symbol: l.symbol };
+        }
+    }
+    
+    // Binary Operations
+    if (args.length === 2) {
+        const a0 = args[0];
+        const a1 = args[1];
+        
+        const c0 = isPureConstant(a0) ? evaluateConstantNode(a0) : null;
+        const c1 = isPureConstant(a1) ? evaluateConstantNode(a1) : null;
+        
+        const l0 = !c0 ? getLinearTerm(a0) : null;
+        const l1 = !c1 ? getLinearTerm(a1) : null;
+        
+        // Multiplication
+        if (node.op === '*') {
+            // Const * Linear
+            if (c0 && l1) return { coeff: mul(c0, l1.coeff), symbol: l1.symbol };
+            // Linear * Const
+            if (l0 && c1) return { coeff: mul(l0.coeff, c1), symbol: l0.symbol };
+        }
+        
+        // Division
+        if (node.op === '/') {
+            // Linear / Const
+            if (l0 && c1) return { coeff: div(l0.coeff, c1), symbol: l0.symbol };
+        }
+    }
+    
+    return null;
+}
+
+// Math Helpers
+function neg(c) { return evaluateOp('-', [c]); }
+function mul(a, b) { return evaluateOp('*', [a, b]); }
+function div(a, b) { return evaluateOp('/', [a, b]); }
+
+function evaluateOp(op, args) {
+    const node = new math.OperatorNode(op, getFnName(op, args), args);
+    return evaluateConstantNode(node);
+}
+
+function getFnName(op, args) {
+    if (op === '+') return 'add';
+    if (op === '-') return (args && args.length === 1) ? 'unaryMinus' : 'subtract';
+    if (op === '*') return 'multiply';
+    if (op === '/') return 'divide';
+    return op;
+}
+
+function isZero(node) {
+    if (node.value && typeof node.value === 'object') {
+        if (node.value.n !== undefined) return node.value.n == 0;
+    }
+    return node.value === 0;
+}
+function isOne(node) {
+    if (node.value && typeof node.value === 'object') {
+        if (node.value.n !== undefined && node.value.d !== undefined) {
+            // Check sign if it exists (MathJS Fraction)
+            const s = node.value.s !== undefined ? node.value.s : 1;
+            return s == 1 && node.value.n == 1 && node.value.d == 1;
+        }
+    }
+    return node.value === 1;
+}
+function isMinusOne(node) {
+    if (node.value && typeof node.value === 'object') {
+        if (node.value.n !== undefined && node.value.d !== undefined && node.value.s !== undefined) {
+            return node.value.s == -1 && node.value.n == 1 && node.value.d == 1;
+        }
+    }
+    return node.value === -1;
+}
+
+function isZeroNode(node) {
+    if (!node) return false;
+    return isPureConstant(node) && isZero(evaluateConstantNode(node));
+}
+
 function cleanEquationNode(node) {
-    // 1. Run standard simplify
-    let res = simplify(node);
+    // 1. Fold constants (arithmetic) without reordering variables
+    let res = foldConstants(node);
     
     // 2. Custom transform to handle unary minus on constants and terms
     return postProcessNode(res);
@@ -398,7 +593,7 @@ function flattenTerms(node) {
             if (typeof val === 'number' && val < 0) {
                 isNeg = true;
                 posVal = -val;
-            } else if (val && typeof val.s === 'number' && val.s === -1) {
+            } else if (val && (val.s === -1 || val.s === -1n)) {
                 isNeg = true;
                 posVal = val.mul(-1);
             }
@@ -426,7 +621,7 @@ function flattenTerms(node) {
                 if (typeof numerator.value === 'number' && numerator.value < 0) {
                     isNeg = true;
                     posVal = -numerator.value;
-                } else if (numerator.value && typeof numerator.value.s === 'number' && numerator.value.s === -1) {
+                } else if (numerator.value && (numerator.value.s === -1 || numerator.value.s === -1n)) {
                     isNeg = true;
                     posVal = numerator.value.mul(-1);
                 }
@@ -456,7 +651,7 @@ function flattenTerms(node) {
             const newNode = new math.ConstantNode(-n.value);
             newNode._id = n._id; // Preserve ID for drag/drop
             terms.push({ node: newNode, sign: -currentSign });
-        } else if (n.isConstantNode && n.value && typeof n.value.s === 'number' && n.value.s === -1) {
+        } else if (n.isConstantNode && n.value && (n.value.s === -1 || n.value.s === -1n)) {
              // Negative Fraction
              const posFrac = n.value.mul(-1);
              const newNode = new math.ConstantNode(posFrac);
@@ -488,9 +683,36 @@ function renderTermTex(termObj) {
             // Check for fraction split candidate: (A + B) / C
             if (node.type === 'OperatorNode' && node.op === '/') {
                 const numerator = node.args[0];
+                const denominator = node.args[1];
+
                 if (numerator.type === 'OperatorNode' && (numerator.op === '+' || numerator.op === '-')) {
                     const defaultTex = node.toTex({ ...options, handler: undefined });
                     return `\\class{distributable node-${node._id}}{${defaultTex}}`;
+                }
+                
+                // Check for Fraction Coefficient: (y * 9) / 2 or (9 * y) / 2
+                // Ensure denominator is constant
+                if (denominator.isConstantNode) {
+                    // Case 1: Numerator is Symbol * Constant or Constant * Symbol
+                    if (numerator.type === 'OperatorNode' && numerator.op === '*') {
+                        const sym = numerator.args.find(a => a.isSymbolNode);
+                        const coeff = numerator.args.find(a => a.isConstantNode);
+                        
+                        if (sym && coeff) {
+                            // Render as \frac{coeff}{denom} sym
+                            // Use toTex to handle formatting of numbers/fractions
+                            const coeffTex = coeff.toTex(options);
+                            const denomTex = denominator.toTex(options);
+                            const symTex = sym.toTex(options);
+                            return `\\frac{${coeffTex}}{${denomTex}} ${symTex}`;
+                        }
+                    }
+                    // Case 2: Numerator is Symbol
+                    if (numerator.isSymbolNode) {
+                         const denomTex = denominator.toTex(options);
+                         const symTex = numerator.toTex(options);
+                         return `\\frac{1}{${denomTex}} ${symTex}`;
+                    }
                 }
             }
             return undefined;
@@ -508,18 +730,6 @@ function renderTermTex(termObj) {
 
 function renderSide(node, eqId, side) {
     let terms = flattenTerms(node);
-    
-    // Filter out zero terms if there are multiple terms (e.g. 2x + 0 -> 2x)
-    if (terms.length > 1) {
-        terms = terms.filter(t => {
-            if (t.node.isConstantNode) {
-                const val = t.node.value;
-                if (typeof val === 'number' && val === 0) return false;
-                if (typeof val === 'object' && val.n === 0) return false;
-            }
-            return true;
-        });
-    }
     
     let html = '';
     
@@ -689,9 +899,6 @@ function handleDragMove(e) {
     const eqItem = document.elementFromPoint(e.clientX, e.clientY)?.closest('.equation-item');
     
     // Clear previous preview if we left the equation or changed context
-    // But we want to keep preview if we are still in valid zone.
-    // If eqItem is null, we clear.
-    
     if (!eqItem) {
         clearPreview();
         dropTarget = null;
@@ -706,15 +913,36 @@ function handleDragMove(e) {
     
     if (!lhs || !rhs) return;
     
-    // 3. Determine closest side
-    const lhsRect = lhs.getBoundingClientRect();
-    const rhsRect = rhs.getBoundingClientRect();
+    // 3. Determine Target Side
+    // Use elementFromPoint to see if we are directly over a side container
+    const hoveredEl = document.elementFromPoint(e.clientX, e.clientY);
+    let targetSide = null;
     
-    // Distance to center of rects
-    const distLhs = Math.abs(e.clientX - (lhsRect.left + lhsRect.width/2));
-    const distRhs = Math.abs(e.clientX - (rhsRect.left + rhsRect.width/2));
+    if (lhs.contains(hoveredEl)) {
+        targetSide = 'lhs';
+    } else if (rhs.contains(hoveredEl)) {
+        targetSide = 'rhs';
+    } else {
+        // Not directly over a side (e.g. in padding/margin or between terms)
+        // Use distance to the *edges* of the sides
+        const lhsRect = lhs.getBoundingClientRect();
+        const rhsRect = rhs.getBoundingClientRect();
+        
+        // If we are to the left of LHS right edge, we are LHS.
+        // If we are to the right of RHS left edge, we are RHS.
+        // If we are in between, check which is closer.
+        
+        if (e.clientX < lhsRect.right) {
+             targetSide = 'lhs';
+        } else if (e.clientX > rhsRect.left) {
+             targetSide = 'rhs';
+        } else {
+             const distToLhs = Math.abs(e.clientX - lhsRect.right);
+             const distToRhs = Math.abs(e.clientX - rhsRect.left);
+             targetSide = (distToLhs < distToRhs) ? 'lhs' : 'rhs';
+        }
+    }
     
-    const targetSide = (distLhs < distRhs) ? 'lhs' : 'rhs';
     const targetEl = (targetSide === 'lhs') ? lhs : rhs;
     
     // 4. Find position within side
@@ -724,7 +952,7 @@ function handleDragMove(e) {
     
     // Check for Merge
     // If hovering directly over a term
-    const hoverTerm = document.elementFromPoint(e.clientX, e.clientY)?.closest('.draggable-term');
+    const hoverTerm = hoveredEl?.closest('.draggable-term');
     
     // Clear merge highlight
     document.querySelectorAll('.preview-merge').forEach(el => el.classList.remove('preview-merge'));
@@ -783,12 +1011,18 @@ function updatePreview(container, beforeEl) {
         // Ensure it's visible
         previewEl.style.opacity = '0.5';
         previewEl.style.display = 'inline-block';
+        previewEl.style.pointerEvents = 'none';
     }
     
-    if (beforeEl) {
-        container.insertBefore(previewEl, beforeEl);
-    } else {
-        container.appendChild(previewEl);
+    try {
+        if (beforeEl) {
+            container.insertBefore(previewEl, beforeEl);
+        } else {
+            container.appendChild(previewEl);
+        }
+    } catch (e) {
+        // Ignore HierarchyRequestError or other DOM errors during rapid drag
+        // console.warn("Preview update failed:", e);
     }
 }
 
@@ -807,10 +1041,21 @@ function canMerge(node1, node2) {
     // Or Coeff*Symbol with Coeff*Symbol
     const getSymbol = (n) => {
         if (n.isSymbolNode) return n.name;
-        if (n.type === 'OperatorNode' && n.op === '*') {
-            // Assuming coeff * symbol
-            const sym = n.args.find(a => a.isSymbolNode);
-            return sym ? sym.name : null;
+        if (n.type === 'OperatorNode') {
+            if (n.op === '*') {
+                // Assuming coeff * symbol
+                const sym = n.args.find(a => a.isSymbolNode);
+                return sym ? sym.name : null;
+            }
+            if (n.op === '/') {
+                // Check numerator for symbol
+                const numerator = n.args[0];
+                if (numerator.isSymbolNode) return numerator.name;
+                if (numerator.type === 'OperatorNode' && numerator.op === '*') {
+                     const sym = numerator.args.find(a => a.isSymbolNode);
+                     return sym ? sym.name : null;
+                }
+            }
         }
         return null;
     };
@@ -834,6 +1079,35 @@ function handleDragEnd(e) {
     dragGhost = null;
     if (dragSource.element) dragSource.element.classList.remove('dragging-original');
     
+    // Check if we have a preview element in the DOM
+    if (previewEl && previewEl.parentNode && (!dropTarget || dropTarget.action === 'insert')) {
+        // Re-derive dropTarget from preview position to be 100% sure
+        const parent = previewEl.parentNode;
+        const eqItem = parent.closest('.equation-item');
+        if (eqItem) {
+            const eqId = parseInt(eqItem.dataset.id);
+            const side = parent.classList.contains('side-lhs') ? 'lhs' : 'rhs';
+            
+            // Calculate index based on DOM position
+            const terms = Array.from(parent.querySelectorAll('.draggable-term'))
+                .filter(el => !el.classList.contains('dragging-original') && el !== previewEl);
+            
+            let index = terms.length;
+            
+            // Find the term that comes *after* the preview
+            let nextSibling = previewEl.nextElementSibling;
+            while (nextSibling) {
+                if (nextSibling.classList.contains('draggable-term') && !nextSibling.classList.contains('dragging-original')) {
+                    index = terms.indexOf(nextSibling);
+                    break;
+                }
+                nextSibling = nextSibling.nextElementSibling;
+            }
+            
+            dropTarget = { eqId, side, index, action: 'insert' };
+        }
+    }
+    
     clearPreview();
     document.querySelectorAll('.preview-merge').forEach(el => el.classList.remove('preview-merge'));
     
@@ -846,88 +1120,98 @@ function handleDragEnd(e) {
 }
 
 function applyDrop(source, target) {
-    const eq = equations.find(e => e.id === source.eqId);
-    
-    // Helper to get terms list for a side
-    const getSideTerms = (s) => flattenTerms(s === 'lhs' ? eq.lhs : eq.rhs);
-    
-    let sourceTerms = getSideTerms(source.side);
-    let targetTerms = (source.side === target.side) ? sourceTerms : getSideTerms(target.side);
-    
-    // Remove source
-    const sourceIndex = sourceTerms.findIndex(t => t.node._id === source.termId);
-    if (sourceIndex === -1) return;
-    const sourceItem = sourceTerms[sourceIndex];
-    sourceTerms.splice(sourceIndex, 1);
-    
-    // If moving to different side, flip sign
-    if (source.side !== target.side) {
-        sourceItem.sign = -sourceItem.sign;
-    }
-    
-    // Apply to target
-    if (target.action === 'merge') {
-        const targetIndex = targetTerms.findIndex(t => t.node._id === target.termId);
-        if (targetIndex !== -1) {
-            const targetItem = targetTerms[targetIndex];
-            
-            // Create new merged node: (sign1 * node1) + (sign2 * node2)
-            const t1 = sourceItem.sign === 1 ? sourceItem.node : new math.OperatorNode('-', 'unaryMinus', [sourceItem.node]);
-            const t2 = targetItem.sign === 1 ? targetItem.node : new math.OperatorNode('-', 'unaryMinus', [targetItem.node]);
-            
-            const sum = new math.OperatorNode('+', 'add', [t1, t2]);
-            const simplified = simplify(sum);
-            
-            // Update target item
-            targetItem.node = simplified;
-            targetItem.sign = 1; // Simplified node handles its own sign usually
+    try {
+        const eq = equations.find(e => e.id === source.eqId);
+        if (!eq) return;
+        
+        // Helper to get terms list for a side
+        const getSideTerms = (s) => flattenTerms(s === 'lhs' ? eq.lhs : eq.rhs);
+        
+        let sourceTerms = getSideTerms(source.side);
+        let targetTerms = (source.side === target.side) ? sourceTerms : getSideTerms(target.side);
+        
+        // Remove source
+        const sourceIndex = sourceTerms.findIndex(t => t.node._id === source.termId);
+        if (sourceIndex === -1) {
+            console.error("Source term not found:", source.termId);
+            return;
         }
-    } else if (target.action === 'insert') {
-        targetTerms.splice(target.index, 0, sourceItem);
-    }
-    
-    // Rebuild ASTs
-    function rebuildAST(terms) {
-        if (terms.length === 0) return new math.ConstantNode(0);
+        const sourceItem = sourceTerms[sourceIndex];
+        sourceTerms.splice(sourceIndex, 1);
         
-        // Accumulate
-        let result = null;
+        // If moving to different side, flip sign
+        if (source.side !== target.side) {
+            sourceItem.sign = -sourceItem.sign;
+        }
         
-        terms.forEach(t => {
-            let termNode = t.node;
-            // Apply sign
-            if (t.sign === -1) {
-                termNode = new math.OperatorNode('-', 'unaryMinus', [termNode]);
+        // Apply to target
+        if (target.action === 'merge') {
+            const targetIndex = targetTerms.findIndex(t => t.node._id === target.termId);
+            if (targetIndex !== -1) {
+                const targetItem = targetTerms[targetIndex];
+                
+                // Create new merged node: (sign1 * node1) + (sign2 * node2)
+                const t1 = sourceItem.sign === 1 ? sourceItem.node : new math.OperatorNode('-', 'unaryMinus', [sourceItem.node]);
+                const t2 = targetItem.sign === 1 ? targetItem.node : new math.OperatorNode('-', 'unaryMinus', [targetItem.node]);
+                
+                const sum = new math.OperatorNode('+', 'add', [t1, t2]);
+                const simplified = simplify(sum);
+                
+                // Update target item
+                targetItem.node = simplified;
+                targetItem.sign = 1; // Simplified node handles its own sign usually
             }
+        } else if (target.action === 'insert') {
+            // Ensure index is within bounds (append if out of bounds)
+            const insertIndex = Math.min(target.index, targetTerms.length);
+            targetTerms.splice(insertIndex, 0, sourceItem);
+        }
+        
+        // Rebuild ASTs
+        function rebuildAST(terms) {
+            if (terms.length === 0) return new math.ConstantNode(0);
             
-            if (result === null) {
-                result = termNode;
-            } else {
-                result = new math.OperatorNode('+', 'add', [result, termNode]);
-            }
-        });
+            // Accumulate
+            let result = null;
+            
+            terms.forEach(t => {
+                let termNode = t.node;
+                // Apply sign
+                if (t.sign === -1) {
+                    termNode = new math.OperatorNode('-', 'unaryMinus', [termNode]);
+                }
+                
+                if (result === null) {
+                    result = termNode;
+                } else {
+                    result = new math.OperatorNode('+', 'add', [result, termNode]);
+                }
+            });
+            
+            return cleanEquationNode(result);
+        }
         
-        return postProcessNode(result);
-    }
-    
-    if (source.side === target.side) {
-        // Only one side changed (reorder/merge within side)
-        if (source.side === 'lhs') eq.lhs = rebuildAST(sourceTerms);
-        else eq.rhs = rebuildAST(sourceTerms);
-    } else {
-        // Both sides changed
-        // Use the modified arrays directly!
-        if (source.side === 'lhs') {
-            eq.lhs = rebuildAST(sourceTerms);
-            eq.rhs = rebuildAST(targetTerms);
+        if (source.side === target.side) {
+            // Only one side changed (reorder/merge within side)
+            if (source.side === 'lhs') eq.lhs = rebuildAST(sourceTerms);
+            else eq.rhs = rebuildAST(sourceTerms);
         } else {
-            eq.lhs = rebuildAST(targetTerms);
-            eq.rhs = rebuildAST(sourceTerms);
+            // Both sides changed
+            // Use the modified arrays directly!
+            if (source.side === 'lhs') {
+                eq.lhs = rebuildAST(sourceTerms);
+                eq.rhs = rebuildAST(targetTerms);
+            } else {
+                eq.lhs = rebuildAST(targetTerms);
+                eq.rhs = rebuildAST(sourceTerms);
+            }
         }
+        
+        renderEquations();
+        checkWin();
+    } catch (e) {
+        console.error("Error in applyDrop:", e);
     }
-    
-    renderEquations();
-    checkWin();
 }
 
 function assignIds(node) {
@@ -1124,8 +1408,8 @@ function handleOperation(op) {
 
             equations.push({
                 id: nextEqId++,
-                lhs: cleanEquationNode(simplify(newLhs)),
-                rhs: cleanEquationNode(simplify(newRhs))
+                lhs: cleanEquationNode(newLhs),
+                rhs: cleanEquationNode(newRhs)
             });
 
         } else if (op === 'add-eq' || op === 'sub-eq') {
@@ -1150,8 +1434,8 @@ function handleOperation(op) {
 
             equations.push({
                 id: nextEqId++,
-                lhs: cleanEquationNode(simplify(newLhs)),
-                rhs: cleanEquationNode(simplify(newRhs))
+                lhs: cleanEquationNode(newLhs),
+                rhs: cleanEquationNode(newRhs)
             });
         } else {
             // Term operations
@@ -1197,8 +1481,8 @@ function handleOperation(op) {
                 newRhs = new math.OperatorNode('/', 'divide', [eq.rhs, termNode]);
             }
 
-            eq.lhs = cleanEquationNode(simplify(newLhs));
-            eq.rhs = cleanEquationNode(simplify(newRhs));
+            eq.lhs = cleanEquationNode(newLhs);
+            eq.rhs = cleanEquationNode(newRhs);
         }
 
         renderEquations();
