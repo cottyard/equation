@@ -1,0 +1,45 @@
+.draggable-term {
+    cursor: grab;
+    display: inline-block;
+    transition: opacity 0.2s;
+}
+
+.draggable-term:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+    border-radius: 4px;
+}
+
+.draggable-term:active {
+    cursor: grabbing;
+}
+
+.dragging-original {
+    display: none !important;
+}
+
+.drag-preview {
+    opacity: 0.5;
+    background-color: rgba(52, 152, 219, 0.2);
+    border-radius: 4px;
+}
+
+.preview-merge {
+    background-color: rgba(46, 204, 113, 0.3) !important;
+    border-radius: 4px;
+    box-shadow: 0 0 5px rgba(46, 204, 113, 0.5);
+}
+
+.side-container {
+    display: inline-block;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 5px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    vertical-align: middle;
+}
+
+.preview-side {
+    background-color: rgba(52, 152, 219, 0.1);
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+}

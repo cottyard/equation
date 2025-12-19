@@ -355,6 +355,199 @@ function cleanEquationNode(node) {
     return postProcessNode(res);
 }
 
+// --- Drag and Drop Logic ---
+
+let dragSource = null; // { eqId, side: 'lhs'|'rhs', termId, node }
+let potentialDragSource = null; // Temporary storage before drag threshold
+let dragStartPos = null; // { x, y }
+let dragGhost = null;
+let dropTarget = null; // { eqId, side, termId, index, action: 'merge'|'move' }
+let previewEl = null;
+
+function flattenTerms(node) {
+    // Returns array of { node, sign: 1|-1 }
+    // We assume the node is simplified, so it's a tree of adds/subtracts
+    // But simplify might produce nested adds.
+    
+    let terms = [];
+    
+    function recurse(n, currentSign) {
+        if (n.type === 'OperatorNode') {
+            // Unary minus
+            if (n.fn === 'unaryMinus') {
+                recurse(n.args[0], -currentSign);
+                return;
+            }
+            if (n.op === '+') {
+                n.args.forEach(arg => recurse(arg, currentSign));
+                return;
+            }
+            if (n.op === '-') {
+                recurse(n.args[0], currentSign);
+                recurse(n.args[1], -currentSign);
+                return;
+            }
+        }
+        
+        // Check for Negative Coefficient in Multiplication: -2 * x
+        if (n.type === 'OperatorNode' && n.op === '*' && n.args[0].isConstantNode) {
+            const val = n.args[0].value;
+            let isNeg = false;
+            let posVal = null;
+            
+            if (typeof val === 'number' && val < 0) {
+                isNeg = true;
+                posVal = -val;
+            } else if (val && typeof val.s === 'number' && val.s === -1) {
+                isNeg = true;
+                posVal = val.mul(-1);
+            }
+            
+            if (isNeg) {
+                // Create new node with positive coefficient
+                const newArgs = [...n.args];
+                newArgs[0] = new math.ConstantNode(posVal);
+                const newNode = new math.OperatorNode(n.op, n.fn, newArgs);
+                newNode._id = n._id;
+                terms.push({ node: newNode, sign: -currentSign });
+                return;
+            }
+        }
+
+        // Check for Negative Numerator in Division: -1 / 2
+        if (n.type === 'OperatorNode' && n.op === '/') {
+            const numerator = n.args[0];
+            const denominator = n.args[1];
+            
+            if (numerator.isConstantNode) {
+                let isNeg = false;
+                let posVal = null;
+                
+                if (typeof numerator.value === 'number' && numerator.value < 0) {
+                    isNeg = true;
+                    posVal = -numerator.value;
+                } else if (numerator.value && typeof numerator.value.s === 'number' && numerator.value.s === -1) {
+                    isNeg = true;
+                    posVal = numerator.value.mul(-1);
+                }
+                
+                if (isNeg) {
+                    const newArgs = [new math.ConstantNode(posVal), denominator];
+                    const newNode = new math.OperatorNode('/', 'divide', newArgs);
+                    newNode._id = n._id;
+                    terms.push({ node: newNode, sign: -currentSign });
+                    return;
+                }
+            }
+            
+            // Case 2: Numerator is unary minus (e.g. -1/2 parsed as unaryMinus(1)/2)
+            if (numerator.type === 'OperatorNode' && numerator.fn === 'unaryMinus') {
+                const newArgs = [numerator.args[0], denominator];
+                const newNode = new math.OperatorNode('/', 'divide', newArgs);
+                newNode._id = n._id;
+                terms.push({ node: newNode, sign: -currentSign });
+                return;
+            }
+        }
+
+        // Base case: a term
+        // Check if it's a negative constant
+        if (n.isConstantNode && typeof n.value === 'number' && n.value < 0) {
+            const newNode = new math.ConstantNode(-n.value);
+            newNode._id = n._id; // Preserve ID for drag/drop
+            terms.push({ node: newNode, sign: -currentSign });
+        } else if (n.isConstantNode && n.value && typeof n.value.s === 'number' && n.value.s === -1) {
+             // Negative Fraction
+             const posFrac = n.value.mul(-1);
+             const newNode = new math.ConstantNode(posFrac);
+             newNode._id = n._id; // Preserve ID for drag/drop
+             terms.push({ node: newNode, sign: -currentSign });
+        } else {
+            terms.push({ node: n, sign: currentSign });
+        }
+    }
+    
+    recurse(node, 1);
+    return terms;
+}
+
+function renderTermTex(termObj) {
+    // termObj: { node, sign }
+    
+    const options = {
+        handler: function(node, options) {
+            // Check for distribution candidate: A * (B + C)
+            if (node.type === 'OperatorNode' && node.op === '*') {
+                const hasAdd = node.args.some(n => n.type === 'OperatorNode' && (n.op === '+' || n.op === '-'));
+                if (hasAdd) {
+                    // Generate default tex without handler
+                    const defaultTex = node.toTex({ ...options, handler: undefined });
+                    return `\\class{distributable node-${node._id}}{${defaultTex}}`;
+                }
+            }
+            // Check for fraction split candidate: (A + B) / C
+            if (node.type === 'OperatorNode' && node.op === '/') {
+                const numerator = node.args[0];
+                if (numerator.type === 'OperatorNode' && (numerator.op === '+' || numerator.op === '-')) {
+                    const defaultTex = node.toTex({ ...options, handler: undefined });
+                    return `\\class{distributable node-${node._id}}{${defaultTex}}`;
+                }
+            }
+            return undefined;
+        }
+    };
+
+    // Let's generate the TeX for the node.
+    let tex = termObj.node.toTex(options);
+    
+    // Fix negative fractions in the node tex itself
+    tex = tex.replace(/\\frac\{-(\d+)\}/g, '-\\frac{$1}');
+    
+    return tex;
+}
+
+function renderSide(node, eqId, side) {
+    let terms = flattenTerms(node);
+    
+    // Filter out zero terms if there are multiple terms (e.g. 2x + 0 -> 2x)
+    if (terms.length > 1) {
+        terms = terms.filter(t => {
+            if (t.node.isConstantNode) {
+                const val = t.node.value;
+                if (typeof val === 'number' && val === 0) return false;
+                if (typeof val === 'object' && val.n === 0) return false;
+            }
+            return true;
+        });
+    }
+    
+    let html = '';
+    
+    terms.forEach((term, index) => {
+        const termTex = renderTermTex(term);
+        const termId = term.node._id;
+        
+        // Determine separator
+        let separator = '';
+        if (index > 0) {
+            if (term.sign === 1) separator = ' + ';
+            else separator = ' - ';
+        } else {
+            if (term.sign === -1) separator = '-';
+        }
+        
+        html += separator + `\\class{draggable-term term-${termId} eq-${eqId} side-${side}}{${termTex}}`;
+    });
+    
+    if (terms.length === 0) {
+        // Should not happen if 0 is preserved, but just in case
+        return `\\class{side-container eq-${eqId} side-${side}}{0}`;
+    }
+    
+    // Wrap the whole side in a container class for easier hit testing
+    return `\\class{side-container eq-${eqId} side-${side}}{${html}}`;
+}
+
 function renderEquations() {
     equationsList.innerHTML = '';
     equations.forEach(eq => {
@@ -369,7 +562,7 @@ function renderEquations() {
             div.classList.add('selected-target');
         }
         
-        // Check if solved (Variable = Constant or Constant = Variable)
+        // Check if solved
         const isSolved = (eq.lhs.isSymbolNode && isValue(eq.rhs)) || 
                          (eq.rhs.isSymbolNode && isValue(eq.lhs));
         
@@ -383,49 +576,9 @@ function renderEquations() {
         
         const mathDiv = document.createElement('div');
         
-        const options = {
-            handler: function(node, options) {
-                // Check for distribution candidate: A * (B + C)
-                if (node.type === 'OperatorNode' && node.op === '*') {
-                    const hasAdd = node.args.some(n => n.type === 'OperatorNode' && (n.op === '+' || n.op === '-'));
-                    if (hasAdd) {
-                        // Generate default tex without handler
-                        const defaultTex = node.toTex({ ...options, handler: undefined });
-                        return `\\class{distributable node-${node._id}}{${defaultTex}}`;
-                    }
-                }
-                // Check for fraction split candidate: (A + B) / C
-                if (node.type === 'OperatorNode' && node.op === '/') {
-                    const numerator = node.args[0];
-                    if (numerator.type === 'OperatorNode' && (numerator.op === '+' || numerator.op === '-')) {
-                        const defaultTex = node.toTex({ ...options, handler: undefined });
-                        return `\\class{distributable node-${node._id}}{${defaultTex}}`;
-                    }
-                }
-                return undefined;
-            }
-        };
-
-        let lhsTex = eq.lhs.toTex(options);
-        let rhsTex = eq.rhs.toTex(options);
-
-        // Fix negative fractions: \frac{-n}{d} -> -\frac{n}{d}
-        const fixNegFrac = (tex) => tex.replace(/\\frac\{-(\d+)\}/g, '-\\frac{$1}');
-        // Fix dot: 2 \cdot x -> 2x
-        const fixDot = (tex) => tex.replace(/(\d|\})\s*\\cdot\s*([a-z])/g, '$1$2');
-        // Fix plus minus: + - -> -
-        const fixPlusMinus = (tex) => tex.replace(/\+\s*-/g, '-');
-        
-        const processTex = (tex) => {
-            let t = tex;
-            t = fixNegFrac(t);
-            t = fixDot(t);
-            t = fixPlusMinus(t);
-            return t;
-        };
-
-        lhsTex = processTex(lhsTex);
-        rhsTex = processTex(rhsTex);
+        // Use custom rendering for top-level terms
+        const lhsTex = renderSide(eq.lhs, eq.id, 'lhs');
+        const rhsTex = renderSide(eq.rhs, eq.id, 'rhs');
 
         mathDiv.innerHTML = `\\[ ${lhsTex} = ${rhsTex} \\]`;
         
@@ -435,8 +588,346 @@ function renderEquations() {
     });
     
     if (window.MathJax) {
-        MathJax.typesetPromise([equationsList]).catch((err) => console.log(err));
+        MathJax.typesetPromise([equationsList]).then(() => {
+            attachDragListeners();
+        }).catch((err) => console.log(err));
     }
+}
+
+function attachDragListeners() {
+    const terms = document.querySelectorAll('.draggable-term');
+    terms.forEach(el => {
+        el.addEventListener('mousedown', handleDragStart);
+    });
+}
+
+document.addEventListener('mousemove', handleDragMove);
+document.addEventListener('mouseup', handleDragEnd);
+
+function handleDragStart(e) {
+    const target = e.target.closest('.draggable-term');
+    if (!target) return;
+    
+    // Don't prevent default yet, to allow clicks to pass through if no drag occurs.
+    // e.preventDefault(); 
+    
+    // Parse IDs from class
+    const classes = target.getAttribute('class').split(/\s+/);
+    const termId = parseInt(classes.find(c => c.startsWith('term-')).split('-')[1]);
+    const eqId = parseInt(classes.find(c => c.startsWith('eq-')).split('-')[1]);
+    const side = classes.find(c => c.startsWith('side-')).split('-')[1];
+    
+    // Find the node
+    const eq = equations.find(e => e.id === eqId);
+    const rootNode = side === 'lhs' ? eq.lhs : eq.rhs;
+    const terms = flattenTerms(rootNode);
+    const termObj = terms.find(t => t.node._id === termId);
+    
+    if (!termObj) return;
+    
+    // Store potential drag info
+    potentialDragSource = {
+        eqId,
+        side,
+        termId,
+        node: termObj.node,
+        sign: termObj.sign,
+        element: target
+    };
+    dragStartPos = { x: e.clientX, y: e.clientY };
+}
+
+function updateGhostPosition(e) {
+    if (!dragGhost) return;
+    dragGhost.style.left = (e.clientX + 10) + 'px';
+    dragGhost.style.top = (e.clientY + 10) + 'px';
+}
+
+function handleDragMove(e) {
+    // Check if we need to start dragging
+    if (potentialDragSource && !dragSource) {
+        const dx = e.clientX - dragStartPos.x;
+        const dy = e.clientY - dragStartPos.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist > 5) {
+            // Start Dragging
+            dragSource = potentialDragSource;
+            potentialDragSource = null;
+            
+            const target = dragSource.element;
+            
+            // Create ghost
+            dragGhost = target.cloneNode(true);
+            dragGhost.style.position = 'fixed';
+            dragGhost.style.pointerEvents = 'none';
+            dragGhost.style.opacity = '0.9';
+            dragGhost.style.zIndex = '1000';
+            dragGhost.style.transform = 'scale(1.1)';
+            
+            // Copy computed styles
+            const computed = window.getComputedStyle(target);
+            dragGhost.style.fontFamily = computed.fontFamily;
+            dragGhost.style.fontSize = computed.fontSize;
+            dragGhost.style.color = computed.color;
+            
+            document.body.appendChild(dragGhost);
+            
+            updateGhostPosition(e);
+            
+            // Hide original
+            target.classList.add('dragging-original');
+        }
+    }
+
+    if (!dragSource) return;
+    
+    e.preventDefault(); // Prevent selection while dragging
+    updateGhostPosition(e);
+    
+    // 1. Find Equation Item
+    const eqItem = document.elementFromPoint(e.clientX, e.clientY)?.closest('.equation-item');
+    
+    // Clear previous preview if we left the equation or changed context
+    // But we want to keep preview if we are still in valid zone.
+    // If eqItem is null, we clear.
+    
+    if (!eqItem) {
+        clearPreview();
+        dropTarget = null;
+        return;
+    }
+    
+    const eqId = parseInt(eqItem.dataset.id);
+    
+    // 2. Find Sides
+    const lhs = eqItem.querySelector('.side-lhs');
+    const rhs = eqItem.querySelector('.side-rhs');
+    
+    if (!lhs || !rhs) return;
+    
+    // 3. Determine closest side
+    const lhsRect = lhs.getBoundingClientRect();
+    const rhsRect = rhs.getBoundingClientRect();
+    
+    // Distance to center of rects
+    const distLhs = Math.abs(e.clientX - (lhsRect.left + lhsRect.width/2));
+    const distRhs = Math.abs(e.clientX - (rhsRect.left + rhsRect.width/2));
+    
+    const targetSide = (distLhs < distRhs) ? 'lhs' : 'rhs';
+    const targetEl = (targetSide === 'lhs') ? lhs : rhs;
+    
+    // 4. Find position within side
+    // Get all terms in this side (excluding dragged one)
+    const terms = Array.from(targetEl.querySelectorAll('.draggable-term'))
+        .filter(el => !el.classList.contains('dragging-original') && !el.classList.contains('drag-preview'));
+    
+    // Check for Merge
+    // If hovering directly over a term
+    const hoverTerm = document.elementFromPoint(e.clientX, e.clientY)?.closest('.draggable-term');
+    
+    // Clear merge highlight
+    document.querySelectorAll('.preview-merge').forEach(el => el.classList.remove('preview-merge'));
+    
+    if (hoverTerm && terms.includes(hoverTerm)) {
+        const classes = hoverTerm.getAttribute('class').split(/\s+/);
+        const tId = parseInt(classes.find(c => c.startsWith('term-')).split('-')[1]);
+        const eId = parseInt(classes.find(c => c.startsWith('eq-')).split('-')[1]);
+        
+        if (eId === dragSource.eqId && tId !== dragSource.termId) {
+            // Check merge compatibility
+            const eq = equations.find(eq => eq.id === eId);
+            const root = targetSide === 'lhs' ? eq.lhs : eq.rhs;
+            const flatTerms = flattenTerms(root);
+            const targetTerm = flatTerms.find(t => t.node._id === tId);
+            
+            if (targetTerm && canMerge(dragSource.node, targetTerm.node)) {
+                hoverTerm.classList.add('preview-merge');
+                clearPreview(); // Remove insert preview
+                dropTarget = { eqId: eId, side: targetSide, termId: tId, action: 'merge' };
+                return;
+            }
+        }
+    }
+    
+    // If not merging, find insert position
+    let insertIndex = terms.length;
+    let insertBeforeEl = null;
+    
+    for (let i = 0; i < terms.length; i++) {
+        const rect = terms[i].getBoundingClientRect();
+        const center = rect.left + rect.width / 2;
+        if (e.clientX < center) {
+            insertIndex = i;
+            insertBeforeEl = terms[i];
+            break;
+        }
+    }
+    
+    // Update Preview
+    updatePreview(targetEl, insertBeforeEl);
+    
+    dropTarget = { eqId, side: targetSide, index: insertIndex, action: 'insert' };
+}
+
+function updatePreview(container, beforeEl) {
+    // If preview is already in correct place, do nothing
+    if (previewEl && previewEl.parentNode === container && previewEl.nextSibling === beforeEl) {
+        return;
+    }
+
+    if (!previewEl) {
+        previewEl = dragSource.element.cloneNode(true);
+        previewEl.classList.remove('dragging-original');
+        previewEl.classList.add('drag-preview');
+        // Ensure it's visible
+        previewEl.style.opacity = '0.5';
+        previewEl.style.display = 'inline-block';
+    }
+    
+    if (beforeEl) {
+        container.insertBefore(previewEl, beforeEl);
+    } else {
+        container.appendChild(previewEl);
+    }
+}
+
+function clearPreview() {
+    if (previewEl && previewEl.parentNode) {
+        previewEl.parentNode.removeChild(previewEl);
+    }
+    previewEl = null;
+}
+
+function canMerge(node1, node2) {
+    // Constant with Constant
+    if (node1.isConstantNode && node2.isConstantNode) return true;
+    
+    // Symbol with Symbol (same name)
+    // Or Coeff*Symbol with Coeff*Symbol
+    const getSymbol = (n) => {
+        if (n.isSymbolNode) return n.name;
+        if (n.type === 'OperatorNode' && n.op === '*') {
+            // Assuming coeff * symbol
+            const sym = n.args.find(a => a.isSymbolNode);
+            return sym ? sym.name : null;
+        }
+        return null;
+    };
+    
+    const s1 = getSymbol(node1);
+    const s2 = getSymbol(node2);
+    
+    if (s1 && s2 && s1 === s2) return true;
+    
+    return false;
+}
+
+function handleDragEnd(e) {
+    potentialDragSource = null;
+    dragStartPos = null;
+
+    if (!dragSource) return;
+    
+    // Cleanup visual
+    if (dragGhost) dragGhost.remove();
+    dragGhost = null;
+    if (dragSource.element) dragSource.element.classList.remove('dragging-original');
+    
+    clearPreview();
+    document.querySelectorAll('.preview-merge').forEach(el => el.classList.remove('preview-merge'));
+    
+    if (dropTarget) {
+        applyDrop(dragSource, dropTarget);
+    }
+    
+    dragSource = null;
+    dropTarget = null;
+}
+
+function applyDrop(source, target) {
+    const eq = equations.find(e => e.id === source.eqId);
+    
+    // Helper to get terms list for a side
+    const getSideTerms = (s) => flattenTerms(s === 'lhs' ? eq.lhs : eq.rhs);
+    
+    let sourceTerms = getSideTerms(source.side);
+    let targetTerms = (source.side === target.side) ? sourceTerms : getSideTerms(target.side);
+    
+    // Remove source
+    const sourceIndex = sourceTerms.findIndex(t => t.node._id === source.termId);
+    if (sourceIndex === -1) return;
+    const sourceItem = sourceTerms[sourceIndex];
+    sourceTerms.splice(sourceIndex, 1);
+    
+    // If moving to different side, flip sign
+    if (source.side !== target.side) {
+        sourceItem.sign = -sourceItem.sign;
+    }
+    
+    // Apply to target
+    if (target.action === 'merge') {
+        const targetIndex = targetTerms.findIndex(t => t.node._id === target.termId);
+        if (targetIndex !== -1) {
+            const targetItem = targetTerms[targetIndex];
+            
+            // Create new merged node: (sign1 * node1) + (sign2 * node2)
+            const t1 = sourceItem.sign === 1 ? sourceItem.node : new math.OperatorNode('-', 'unaryMinus', [sourceItem.node]);
+            const t2 = targetItem.sign === 1 ? targetItem.node : new math.OperatorNode('-', 'unaryMinus', [targetItem.node]);
+            
+            const sum = new math.OperatorNode('+', 'add', [t1, t2]);
+            const simplified = simplify(sum);
+            
+            // Update target item
+            targetItem.node = simplified;
+            targetItem.sign = 1; // Simplified node handles its own sign usually
+        }
+    } else if (target.action === 'insert') {
+        targetTerms.splice(target.index, 0, sourceItem);
+    }
+    
+    // Rebuild ASTs
+    function rebuildAST(terms) {
+        if (terms.length === 0) return new math.ConstantNode(0);
+        
+        // Accumulate
+        let result = null;
+        
+        terms.forEach(t => {
+            let termNode = t.node;
+            // Apply sign
+            if (t.sign === -1) {
+                termNode = new math.OperatorNode('-', 'unaryMinus', [termNode]);
+            }
+            
+            if (result === null) {
+                result = termNode;
+            } else {
+                result = new math.OperatorNode('+', 'add', [result, termNode]);
+            }
+        });
+        
+        return postProcessNode(result);
+    }
+    
+    if (source.side === target.side) {
+        // Only one side changed (reorder/merge within side)
+        if (source.side === 'lhs') eq.lhs = rebuildAST(sourceTerms);
+        else eq.rhs = rebuildAST(sourceTerms);
+    } else {
+        // Both sides changed
+        // Use the modified arrays directly!
+        if (source.side === 'lhs') {
+            eq.lhs = rebuildAST(sourceTerms);
+            eq.rhs = rebuildAST(targetTerms);
+        } else {
+            eq.lhs = rebuildAST(targetTerms);
+            eq.rhs = rebuildAST(sourceTerms);
+        }
+    }
+    
+    renderEquations();
+    checkWin();
 }
 
 function assignIds(node) {
