@@ -293,12 +293,8 @@ function generateEquation() {
         rhs: parse(rhsExpr)
     });
 }
-function cleanEquationNode(node) {
-    // 1. Run standard simplify
-    let res = simplify(node);
-    
-    // 2. Custom transform to handle unary minus on constants and terms
-    res = res.transform(function (n) {
+function postProcessNode(node) {
+    return node.transform(function (n) {
         if (n.type === 'OperatorNode' && n.fn === 'unaryMinus') {
             const arg = n.args[0];
             
@@ -349,8 +345,14 @@ function cleanEquationNode(node) {
         }
         return n;
     });
+}
+
+function cleanEquationNode(node) {
+    // 1. Run standard simplify
+    let res = simplify(node);
     
-    return res;
+    // 2. Custom transform to handle unary minus on constants and terms
+    return postProcessNode(res);
 }
 
 function renderEquations() {
@@ -388,6 +390,14 @@ function renderEquations() {
                     const hasAdd = node.args.some(n => n.type === 'OperatorNode' && (n.op === '+' || n.op === '-'));
                     if (hasAdd) {
                         // Generate default tex without handler
+                        const defaultTex = node.toTex({ ...options, handler: undefined });
+                        return `\\class{distributable node-${node._id}}{${defaultTex}}`;
+                    }
+                }
+                // Check for fraction split candidate: (A + B) / C
+                if (node.type === 'OperatorNode' && node.op === '/') {
+                    const numerator = node.args[0];
+                    if (numerator.type === 'OperatorNode' && (numerator.op === '+' || numerator.op === '-')) {
                         const defaultTex = node.toTex({ ...options, handler: undefined });
                         return `\\class{distributable node-${node._id}}{${defaultTex}}`;
                     }
@@ -459,23 +469,46 @@ function handleDistribute(eqId, nodeId) {
 }
 
 function distributeNode(node) {
-    // node is A * (B + C)
-    if (node.type !== 'OperatorNode' || node.op !== '*') return node;
+    // Case 1: Multiplication A * (B + C)
+    if (node.type === 'OperatorNode' && node.op === '*') {
+        const args = node.args;
+        const addIndex = args.findIndex(n => n.type === 'OperatorNode' && (n.op === '+' || n.op === '-'));
+        
+        if (addIndex !== -1) {
+            const addNode = args[addIndex];
+            const otherNode = args[1 - addIndex];
+            
+            const newArgs = addNode.args.map(term => {
+                // Simplify individual terms (e.g. 3 * 2 -> 6)
+                const prod = new math.OperatorNode('*', 'multiply', [otherNode, term]);
+                return simplify(prod);
+            });
+            
+            const newNode = new math.OperatorNode(addNode.op, addNode.fn, newArgs);
+            // Use postProcessNode directly to avoid global simplify merging terms back
+            return postProcessNode(newNode);
+        }
+    }
+
+    // Case 2: Division (A + B) / C
+    if (node.type === 'OperatorNode' && node.op === '/') {
+        const numerator = node.args[0];
+        const denominator = node.args[1];
+        
+        if (numerator.type === 'OperatorNode' && (numerator.op === '+' || numerator.op === '-')) {
+            const newArgs = numerator.args.map(term => {
+                // Create term/denominator and simplify it individually (e.g. 2/2 -> 1)
+                const div = new math.OperatorNode('/', 'divide', [term, denominator]);
+                return simplify(div);
+            });
+            
+            const newNode = new math.OperatorNode(numerator.op, numerator.fn, newArgs);
+            // Use postProcessNode directly to avoid global simplify merging fractions back
+            return postProcessNode(newNode);
+        }
+    }
     
-    const args = node.args;
-    const addIndex = args.findIndex(n => n.type === 'OperatorNode' && (n.op === '+' || n.op === '-'));
-    
-    if (addIndex === -1) return node;
-    
-    const addNode = args[addIndex];
-    const otherNode = args[1 - addIndex];
-    
-    const newArgs = addNode.args.map(term => {
-        return new math.OperatorNode('*', 'multiply', [otherNode, term]);
-    });
-    
-    const newNode = new math.OperatorNode(addNode.op, addNode.fn, newArgs);
-    return cleanEquationNode(simplify(newNode));
+    return node;
 }
 
 function isValue(node) {
@@ -517,9 +550,9 @@ function updateEquationSelectors() {
         if (selectedTargetId !== null) {
             const eq = equations.find(e => e.id === selectedTargetId);
             if (eq) {
-                const isSolved = (eq.lhs.isSymbolNode && isValue(eq.rhs)) || 
-                                 (eq.rhs.isSymbolNode && isValue(eq.lhs));
-                if (isSolved) showSub = true;
+                // Allow substitution if one side is a single variable (coefficient 1)
+                const canSubstitute = eq.lhs.isSymbolNode || eq.rhs.isSymbolNode;
+                if (canSubstitute) showSub = true;
             }
         }
         
@@ -574,16 +607,16 @@ function handleOperation(op) {
             const eq1 = equations[targetIndex]; // The solved equation (x=val)
             const eq2 = equations[secondIndex]; // The target to substitute into
 
-            // Check if eq1 is solved
+            // Check if eq1 is suitable for substitution (one side is a single variable)
             let variable, value;
-            if (eq1.lhs.isSymbolNode && isValue(eq1.rhs)) {
+            if (eq1.lhs.isSymbolNode) {
                 variable = eq1.lhs.name;
                 value = eq1.rhs;
-            } else if (eq1.rhs.isSymbolNode && isValue(eq1.lhs)) {
+            } else if (eq1.rhs.isSymbolNode) {
                 variable = eq1.rhs.name;
                 value = eq1.lhs;
             } else {
-                errorMsg.textContent = '目标方程必须已解出 (例如 x=5) 才能代入。';
+                errorMsg.textContent = '目标方程必须有一侧是单独的变量 (例如 x=...) 才能代入。';
                 return;
             }
 
