@@ -8,8 +8,6 @@ let equations = [];
 let variables = [];
 let nextEqId = 1;
 let solution = {};
-let nextMergeAnimationId = 1;
-let pendingMergeAnimation = null;
 
 const varNames = ['x', 'y', 'z', 'w'];
 
@@ -358,7 +356,7 @@ function foldConstants(node) {
     }
 
     // 2. Helper: Check if node is a pure constant tree
-    if (isPureConstant(node) && shouldEvaluatePureConstantNode(node)) {
+    if (isPureConstant(node)) {
         return evaluateConstantNode(node);
     }
 
@@ -406,14 +404,6 @@ function foldConstants(node) {
 }
 
 // --- Helpers ---
-
-function shouldEvaluatePureConstantNode(node) {
-    if (node.isConstantNode) return true;
-    if (node.type === 'ParenthesisNode') return true;
-    if (node.type !== 'OperatorNode') return false;
-    if (node.fn === 'unaryMinus') return true;
-    return node.op === '*' || node.op === '/';
-}
 
 function isPureConstant(node) {
     if (node.isConstantNode) return true;
@@ -560,169 +550,13 @@ function cleanEquationNode(node) {
     return postProcessNode(res);
 }
 
-function buildSignedNode(termObj) {
-    const baseNode = termObj.node.clone ? termObj.node.clone() : termObj.node;
-    if (termObj.sign === 1) return baseNode;
-    return new math.OperatorNode('-', 'unaryMinus', [baseNode]);
-}
-
-function rebuildTermsAST(terms) {
-    if (terms.length === 0) return new math.ConstantNode(0);
-
-    let result = null;
-
-    terms.forEach(term => {
-        let termNode = term.node;
-        if (term.sign === -1) {
-            termNode = new math.OperatorNode('-', 'unaryMinus', [termNode]);
-        }
-
-        if (result === null) {
-            result = termNode;
-        } else {
-            result = new math.OperatorNode('+', 'add', [result, termNode]);
-        }
-    });
-
-    return cleanEquationNode(result);
-}
-
-function findFirstLikeTermPair(eq) {
-    for (const side of ['lhs', 'rhs']) {
-        const terms = flattenTerms(eq[side]);
-
-        for (let i = 0; i < terms.length; i++) {
-            for (let j = i + 1; j < terms.length; j++) {
-                if (canMerge(terms[i].node, terms[j].node)) {
-                    return { side, terms, firstIndex: i, secondIndex: j };
-                }
-            }
-        }
-    }
-
-    return null;
-}
-
-function mergeLikeTermsInEquation(eq, candidate, animationToken) {
-    const terms = candidate.terms.slice();
-    const firstTerm = terms[candidate.firstIndex];
-    const secondTerm = terms[candidate.secondIndex];
-
-    const sum = new math.OperatorNode('+', 'add', [
-        buildSignedNode(firstTerm),
-        buildSignedNode(secondTerm)
-    ]);
-
-    const mergedNode = cleanEquationNode(simplify(sum));
-    const mergedTerms = flattenTerms(mergedNode);
-    const mergedTerm = mergedTerms.length === 1 ? mergedTerms[0] : { node: mergedNode, sign: 1 };
-
-    if (animationToken) {
-        mergedTerm.node._mergeAnimationToken = animationToken;
-    }
-
-    terms[candidate.firstIndex] = mergedTerm;
-    terms.splice(candidate.secondIndex, 1);
-
-    eq[candidate.side] = rebuildTermsAST(terms);
-    return mergedTerm.node;
-}
-
-function findRenderedTermElement(eqId, side, termId) {
-    return equationsList.querySelector(
-        `.equation-item[data-id="${eqId}"] .term-${termId}.eq-${eqId}.side-${side}`
-    );
-}
-
-function createMergeOverlay(termEl) {
-    const rect = termEl.getBoundingClientRect();
-    const clone = termEl.cloneNode(true);
-
-    clone.classList.remove('dragging-original', 'drag-preview', 'preview-merge', 'term-merge-pulse');
-    clone.classList.add('merge-fly-clone');
-    clone.style.left = `${rect.left}px`;
-    clone.style.top = `${rect.top}px`;
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
-
-    document.body.appendChild(clone);
-    return clone;
-}
-
-function clearPendingMergeAnimation() {
-    if (!pendingMergeAnimation) return;
-
-    pendingMergeAnimation.overlays.forEach(overlay => overlay.remove());
-    if (pendingMergeAnimation.resultNode) {
-        delete pendingMergeAnimation.resultNode._mergeAnimationToken;
-    }
-
-    pendingMergeAnimation = null;
-}
-
-function queueMergeAnimation(eqId, side, termIds) {
-    clearPendingMergeAnimation();
-
-    const overlays = termIds
-        .map(termId => findRenderedTermElement(eqId, side, termId))
-        .filter(Boolean)
-        .map(createMergeOverlay);
-
-    if (overlays.length === 0) return null;
-
-    return {
-        token: nextMergeAnimationId++,
-        overlays,
-        resultNode: null
-    };
-}
-
-function playPendingMergeAnimation() {
-    if (!pendingMergeAnimation) return;
-
-    const animation = pendingMergeAnimation;
-    pendingMergeAnimation = null;
-
-    const resultEl = equationsList.querySelector(`.merge-result-${animation.token}`);
-    if (animation.resultNode) {
-        delete animation.resultNode._mergeAnimationToken;
-    }
-
-    if (!resultEl || animation.overlays.length === 0) {
-        animation.overlays.forEach(overlay => overlay.remove());
-        return;
-    }
-
-    const targetRect = resultEl.getBoundingClientRect();
-    const targetCenterX = targetRect.left + targetRect.width / 2;
-    const targetCenterY = targetRect.top + targetRect.height / 2;
-
-    resultEl.classList.add('term-merge-pulse');
-
-    requestAnimationFrame(() => {
-        animation.overlays.forEach(overlay => {
-            const rect = overlay.getBoundingClientRect();
-            const dx = targetCenterX - (rect.left + rect.width / 2);
-            const dy = targetCenterY - (rect.top + rect.height / 2);
-
-            overlay.style.transform = `translate(${dx}px, ${dy}px) scale(0.55)`;
-            overlay.style.opacity = '0';
-        });
-    });
-
-    window.setTimeout(() => {
-        animation.overlays.forEach(overlay => overlay.remove());
-        resultEl.classList.remove('term-merge-pulse');
-    }, 360);
-}
-
 // --- Drag and Drop Logic ---
 
 let dragSource = null; // { eqId, side: 'lhs'|'rhs', termId, node }
 let potentialDragSource = null; // Temporary storage before drag threshold
 let dragStartPos = null; // { x, y }
 let dragGhost = null;
-let dropTarget = null; // { eqId, side, index, action: 'insert' }
+let dropTarget = null; // { eqId, side, termId, index, action: 'merge'|'move' }
 let previewEl = null;
 
 function flattenTerms(node) {
@@ -911,9 +745,8 @@ function renderSide(node, eqId, side) {
         } else {
             if (term.sign === -1) separator = '-';
         }
-
-        const extraClass = term.node._mergeAnimationToken ? ` merge-result-${term.node._mergeAnimationToken}` : '';
-        html += separator + `\\class{draggable-term term-${termId} eq-${eqId} side-${side}${extraClass}}{${termTex}}`;
+        
+        html += separator + `\\class{draggable-term term-${termId} eq-${eqId} side-${side}}{${termTex}}`;
     });
     
     if (terms.length === 0) {
@@ -965,18 +798,10 @@ function renderEquations() {
     });
     
     if (window.MathJax) {
-        return MathJax.typesetPromise([equationsList]).then(() => {
+        MathJax.typesetPromise([equationsList]).then(() => {
             attachDragListeners();
-            playPendingMergeAnimation();
-        }).catch((err) => {
-            clearPendingMergeAnimation();
-            console.log(err);
-        });
+        }).catch((err) => console.log(err));
     }
-
-    attachDragListeners();
-    playPendingMergeAnimation();
-    return Promise.resolve();
 }
 
 function attachDragListeners() {
@@ -1124,9 +949,36 @@ function handleDragMove(e) {
     // Get all terms in this side (excluding dragged one)
     const terms = Array.from(targetEl.querySelectorAll('.draggable-term'))
         .filter(el => !el.classList.contains('dragging-original') && !el.classList.contains('drag-preview'));
-
+    
+    // Check for Merge
+    // If hovering directly over a term
+    const hoverTerm = hoveredEl?.closest('.draggable-term');
+    
+    // Clear merge highlight
     document.querySelectorAll('.preview-merge').forEach(el => el.classList.remove('preview-merge'));
-
+    
+    if (hoverTerm && terms.includes(hoverTerm)) {
+        const classes = hoverTerm.getAttribute('class').split(/\s+/);
+        const tId = parseInt(classes.find(c => c.startsWith('term-')).split('-')[1]);
+        const eId = parseInt(classes.find(c => c.startsWith('eq-')).split('-')[1]);
+        
+        if (eId === dragSource.eqId && tId !== dragSource.termId) {
+            // Check merge compatibility
+            const eq = equations.find(eq => eq.id === eId);
+            const root = targetSide === 'lhs' ? eq.lhs : eq.rhs;
+            const flatTerms = flattenTerms(root);
+            const targetTerm = flatTerms.find(t => t.node._id === tId);
+            
+            if (targetTerm && canMerge(dragSource.node, targetTerm.node)) {
+                hoverTerm.classList.add('preview-merge');
+                clearPreview(); // Remove insert preview
+                dropTarget = { eqId: eId, side: targetSide, termId: tId, action: 'merge' };
+                return;
+            }
+        }
+    }
+    
+    // If not merging, find insert position
     let insertIndex = terms.length;
     let insertBeforeEl = null;
     
@@ -1184,10 +1036,36 @@ function clearPreview() {
 function canMerge(node1, node2) {
     // Constant with Constant
     if (node1.isConstantNode && node2.isConstantNode) return true;
-
-    const linear1 = getLinearTerm(node1);
-    const linear2 = getLinearTerm(node2);
-    return !!(linear1 && linear2 && linear1.symbol.name === linear2.symbol.name);
+    
+    // Symbol with Symbol (same name)
+    // Or Coeff*Symbol with Coeff*Symbol
+    const getSymbol = (n) => {
+        if (n.isSymbolNode) return n.name;
+        if (n.type === 'OperatorNode') {
+            if (n.op === '*') {
+                // Assuming coeff * symbol
+                const sym = n.args.find(a => a.isSymbolNode);
+                return sym ? sym.name : null;
+            }
+            if (n.op === '/') {
+                // Check numerator for symbol
+                const numerator = n.args[0];
+                if (numerator.isSymbolNode) return numerator.name;
+                if (numerator.type === 'OperatorNode' && numerator.op === '*') {
+                     const sym = numerator.args.find(a => a.isSymbolNode);
+                     return sym ? sym.name : null;
+                }
+            }
+        }
+        return null;
+    };
+    
+    const s1 = getSymbol(node1);
+    const s2 = getSymbol(node2);
+    
+    if (s1 && s2 && s1 === s2) return true;
+    
+    return false;
 }
 
 function handleDragEnd(e) {
@@ -1267,25 +1145,65 @@ function applyDrop(source, target) {
         }
         
         // Apply to target
-        if (target.action === 'insert') {
+        if (target.action === 'merge') {
+            const targetIndex = targetTerms.findIndex(t => t.node._id === target.termId);
+            if (targetIndex !== -1) {
+                const targetItem = targetTerms[targetIndex];
+                
+                // Create new merged node: (sign1 * node1) + (sign2 * node2)
+                const t1 = sourceItem.sign === 1 ? sourceItem.node : new math.OperatorNode('-', 'unaryMinus', [sourceItem.node]);
+                const t2 = targetItem.sign === 1 ? targetItem.node : new math.OperatorNode('-', 'unaryMinus', [targetItem.node]);
+                
+                const sum = new math.OperatorNode('+', 'add', [t1, t2]);
+                const simplified = simplify(sum);
+                
+                // Update target item
+                targetItem.node = simplified;
+                targetItem.sign = 1; // Simplified node handles its own sign usually
+            }
+        } else if (target.action === 'insert') {
             // Ensure index is within bounds (append if out of bounds)
             const insertIndex = Math.min(target.index, targetTerms.length);
             targetTerms.splice(insertIndex, 0, sourceItem);
         }
-
+        
+        // Rebuild ASTs
+        function rebuildAST(terms) {
+            if (terms.length === 0) return new math.ConstantNode(0);
+            
+            // Accumulate
+            let result = null;
+            
+            terms.forEach(t => {
+                let termNode = t.node;
+                // Apply sign
+                if (t.sign === -1) {
+                    termNode = new math.OperatorNode('-', 'unaryMinus', [termNode]);
+                }
+                
+                if (result === null) {
+                    result = termNode;
+                } else {
+                    result = new math.OperatorNode('+', 'add', [result, termNode]);
+                }
+            });
+            
+            return cleanEquationNode(result);
+        }
+        
         if (source.side === target.side) {
             // Only one side changed (reorder/merge within side)
-            if (source.side === 'lhs') eq.lhs = rebuildTermsAST(sourceTerms);
-            else eq.rhs = rebuildTermsAST(sourceTerms);
+            if (source.side === 'lhs') eq.lhs = rebuildAST(sourceTerms);
+            else eq.rhs = rebuildAST(sourceTerms);
         } else {
             // Both sides changed
             // Use the modified arrays directly!
             if (source.side === 'lhs') {
-                eq.lhs = rebuildTermsAST(sourceTerms);
-                eq.rhs = rebuildTermsAST(targetTerms);
+                eq.lhs = rebuildAST(sourceTerms);
+                eq.rhs = rebuildAST(targetTerms);
             } else {
-                eq.lhs = rebuildTermsAST(targetTerms);
-                eq.rhs = rebuildTermsAST(sourceTerms);
+                eq.lhs = rebuildAST(targetTerms);
+                eq.rhs = rebuildAST(sourceTerms);
             }
         }
         
@@ -1445,27 +1363,7 @@ function handleOperation(op) {
     if (targetIndex === -1) return;
 
     try {
-        if (op === 'combine-like') {
-            const eq = equations[targetIndex];
-            const candidate = findFirstLikeTermPair(eq);
-
-            if (!candidate) {
-                errorMsg.textContent = '当前方程没有可合并的同类项。';
-                return;
-            }
-
-            const termIds = [
-                candidate.terms[candidate.firstIndex].node._id,
-                candidate.terms[candidate.secondIndex].node._id
-            ];
-            const animation = queueMergeAnimation(eq.id, candidate.side, termIds);
-            const resultNode = mergeLikeTermsInEquation(eq, candidate, animation ? animation.token : null);
-
-            if (animation) {
-                animation.resultNode = resultNode;
-                pendingMergeAnimation = animation;
-            }
-        } else if (op === 'flip') {
+        if (op === 'flip') {
             const eq = equations[targetIndex];
             const temp = eq.lhs;
             eq.lhs = eq.rhs;

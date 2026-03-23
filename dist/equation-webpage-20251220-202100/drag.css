@@ -30,20 +30,6 @@
     box-shadow: 0 0 5px rgba(46, 204, 113, 0.5);
 }
 
-.merge-fly-clone {
-    position: fixed;
-    margin: 0;
-    pointer-events: none;
-    z-index: 2000;
-    opacity: 0.95;
-    transform-origin: center center;
-    transition: transform 0.32s ease, opacity 0.32s ease;
-}
-
-.term-merge-pulse {
-    animation: termMergePulse 0.42s ease-out;
-}
-
 .side-container {
     display: inline-flex;
     align-items: center;
@@ -58,19 +44,4 @@
 .preview-side {
     background-color: rgba(52, 152, 219, 0.1);
     box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
-}
-
-@keyframes termMergePulse {
-    0% {
-        background-color: rgba(46, 204, 113, 0);
-        transform: scale(1);
-    }
-    45% {
-        background-color: rgba(46, 204, 113, 0.22);
-        transform: scale(1.16);
-    }
-    100% {
-        background-color: rgba(46, 204, 113, 0);
-        transform: scale(1);
-    }
 }

@@ -1,5 +1,13 @@
 {
+  "name": "equation",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./pack.ps1 -IncludeReadme",
+    "test": "node test.js"
+  },
   "dependencies": {
+    "mathjax": "^3.2.2",
     "mathjs": "^15.1.0"
   }
 }

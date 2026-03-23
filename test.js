@@ -17,7 +17,7 @@ function foldConstants(node) {
     }
 
     // 2. Helper: Check if node is a pure constant tree
-    if (isPureConstant(node)) {
+    if (isPureConstant(node) && shouldEvaluatePureConstantNode(node)) {
         return evaluateConstantNode(node);
     }
 
@@ -87,6 +87,14 @@ function foldConstants(node) {
 }
 
 // --- Helpers ---
+
+function shouldEvaluatePureConstantNode(node) {
+    if (node.isConstantNode) return true;
+    if (node.type === 'ParenthesisNode') return true;
+    if (node.type !== 'OperatorNode') return false;
+    if (node.fn === 'unaryMinus') return true;
+    return node.op === '*' || node.op === '/';
+}
 
 function isPureConstant(node) {
     if (node.isConstantNode) return true;
@@ -270,8 +278,9 @@ console.log("Running Tests...");
 
 const tests = [
     // 1. Constants
-    { in: '1 + 2', out: '3' },
-    { in: '1/3 + 1/6', out: '1/2' },
+    { in: '1 + 2', out: '1 + 2' },
+    { in: '1/3 + 1/6', out: '1 / 3 + 1 / 6' },
+    { in: '5 - 3', out: '5 - 3' },
     { in: '2 * 3', out: '6' },
     
     // 2. Identities
