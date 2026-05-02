@@ -1,0 +1,416 @@
+:root {
+  color-scheme: light;
+  --paper-bg: #fffdfa;
+  --ink: #171717;
+  --muted: #5b6470;
+  --line: #cfd4dc;
+  --soft-line: #e7e9ee;
+  --accent: #0f766e;
+  --accent-weak: #dff4ef;
+  --warn: #8a4b10;
+  --warn-bg: #fff5df;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #eef1f4;
+  color: var(--ink);
+  font-family: "Noto Serif SC", "Songti SC", SimSun, "Times New Roman", serif;
+  line-height: 1.75;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 54px;
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--soft-line);
+  backdrop-filter: blur(12px);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.brand,
+.nav-link {
+  color: #26323f;
+  text-decoration: none;
+}
+
+.brand {
+  font-weight: 700;
+}
+
+.nav-link {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.nav-link.current {
+  background: var(--accent-weak);
+  color: #0b5f58;
+}
+
+.exam-shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 28px auto 56px;
+}
+
+.paper-root {
+  background: var(--paper-bg);
+  border: 1px solid #d8dce2;
+  box-shadow: 0 18px 50px rgba(28, 36, 45, 0.11);
+  padding: clamp(24px, 5vw, 58px);
+}
+
+.paper-header {
+  position: relative;
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #1f2937;
+}
+
+.paper-date {
+  position: absolute;
+  right: 0;
+  top: 48px;
+  margin: 0;
+  font-size: 16px;
+}
+
+.paper-header h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 46px);
+  letter-spacing: 0;
+  font-weight: 800;
+}
+
+.paper-summary {
+  margin: 18px 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.paper-notes {
+  margin: 8px auto 0;
+  padding-left: 28px;
+  max-width: 880px;
+  text-align: left;
+  font-size: 15px;
+}
+
+.omitted-assets {
+  margin: 26px 0;
+  padding: 14px 18px;
+  border: 1px solid #edc681;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.omitted-assets h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.omitted-assets ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.paper-section {
+  margin-top: 34px;
+}
+
+.paper-section h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.section-description {
+  margin: 2px 0 18px;
+  color: var(--muted);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+}
+
+.question {
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--soft-line);
+}
+
+.question-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.question-number {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.question-score {
+  color: var(--muted);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+}
+
+.question-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 38%);
+  gap: 20px;
+  align-items: start;
+}
+
+.question.no-figures .question-layout {
+  display: block;
+}
+
+.question-main p {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.question-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 6px 18px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.question-options li {
+  min-height: 34px;
+  font-size: 18px;
+}
+
+.option-label {
+  display: inline-block;
+  min-width: 24px;
+  font-weight: 700;
+}
+
+.subquestion-list {
+  margin: 8px 0 0;
+  padding-left: 32px;
+  font-size: 18px;
+}
+
+.subquestion-list li {
+  margin: 4px 0;
+}
+
+.answer-blank {
+  display: inline-block;
+  width: 86px;
+  height: 1.2em;
+  border-bottom: 2px solid #111827;
+  vertical-align: -0.12em;
+}
+
+.math-display {
+  margin: 8px 0 10px;
+  font-size: 18px;
+}
+
+.exam-table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+  font-size: 16px;
+}
+
+.exam-table td {
+  border: 1px solid #1f2937;
+  padding: 6px 9px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.question-figures {
+  display: grid;
+  gap: 16px;
+}
+
+.exam-figure {
+  margin: 0;
+  padding: 10px 0 0;
+}
+
+.exam-figure svg {
+  display: block;
+  width: 100%;
+  max-height: 300px;
+}
+
+.geometry-board {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 220px;
+  border: 0;
+  background: #fffdfa;
+}
+
+.geometry-board .JXGtext {
+  font-family: "Times New Roman", SimSun, serif;
+  font-style: italic;
+}
+
+.geometry-fallback svg {
+  display: block;
+  width: 100%;
+}
+
+.exam-figure figcaption {
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  text-align: center;
+}
+
+.geo-line,
+.geo-shape,
+.geo-grid,
+.geo-curve,
+.axis {
+  stroke: #111827;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-shape,
+.geo-grid {
+  fill: #fff;
+}
+
+.geo-muted {
+  fill: #f2f4f7;
+}
+
+.geo-thin {
+  stroke: #111827;
+  stroke-width: 1.3;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-dash {
+  stroke-dasharray: 6 5;
+}
+
+.geo-fill,
+.axis-fill {
+  fill: #111827;
+}
+
+.geo-point {
+  fill: #fff;
+  stroke: #111827;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-label,
+.geo-small,
+.geo-option-label,
+.geo-caption {
+  fill: #111827;
+  font-family: "Times New Roman", SimSun, serif;
+}
+
+.geo-label {
+  font-size: 18px;
+  font-style: italic;
+}
+
+.geo-small {
+  font-size: 13px;
+}
+
+.geo-option-label,
+.geo-caption {
+  font-size: 18px;
+  font-style: normal;
+}
+
+.geo-hatch,
+.chart-bar {
+  fill: url(#hatch);
+  stroke: #111827;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-hatch {
+  fill: #d8dde6;
+}
+
+.chart-bar {
+  fill: #d8dde6;
+}
+
+.geo-curve {
+  fill: none;
+  stroke: #111827;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-alt {
+  stroke-dasharray: 7 5;
+}
+
+@media (max-width: 820px) {
+  .paper-date {
+    position: static;
+    margin-bottom: 6px;
+  }
+
+  .question-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .question-options {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .exam-shell {
+    width: 100%;
+    margin: 0;
+  }
+
+  .paper-root {
+    border-left: 0;
+    border-right: 0;
+    padding: 20px 16px 32px;
+  }
+
+  .question-main p,
+  .question-options li,
+  .subquestion-list {
+    font-size: 16px;
+  }
+
+  .question-options {
+    grid-template-columns: 1fr;
+  }
+}

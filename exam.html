@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数学试卷数字化</title>
+  <link rel="stylesheet" href="libs/jsxgraph/jsxgraph.css?v=20260502-1">
+  <link rel="stylesheet" href="exam.css?v=20260502-1">
+  <script>
+    window.__browserSmokeErrors = [];
+    window.addEventListener('error', function (event) {
+      window.__browserSmokeErrors.push(event.message);
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      window.__browserSmokeErrors.push(String(event.reason && event.reason.message || event.reason));
+    });
+    window.MathJax = {
+      tex: {
+        packages: {'[+]': ['ams']},
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      startup: { typeset: false }
+    };
+  </script>
+  <script id="MathJax-script" async src="libs/mathjax/tex-chtml-full.js?v=20260502-1"></script>
+</head>
+<body>
+  <nav class="topbar" aria-label="页面导航">
+    <a class="brand" href="index.html">解方程训练</a>
+    <a class="nav-link current" href="exam.html">数字化试卷</a>
+  </nav>
+  <main class="exam-shell">
+    <div id="paper-root" class="paper-root" aria-live="polite"></div>
+  </main>
+
+  <script src="exam-data.js?v=20260502-1"></script>
+  <script src="libs/jsxgraph/jsxgraphcore.js?v=20260502-1"></script>
+  <script src="geometry-problems.js?v=20260502-1"></script>
+  <script src="geometry-dsl.js?v=20260502-1"></script>
+  <script src="geometry-jsxgraph.js?v=20260502-1"></script>
+  <script src="exam-renderer.js?v=20260502-1"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      ExamRenderer.mountPaper(document.getElementById('paper-root'), ExamPaper);
+    });
+  </script>
+</body>
+</html>
