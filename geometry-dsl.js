@@ -54,6 +54,9 @@
 
   function getLinePoints(scene, id) {
     const object = scene.objectsById[id];
+    if (!object && id.length === 2) {
+      return [getPoint(scene, id[0]), getPoint(scene, id[1])];
+    }
     if (!object || (object.type !== 'line' && object.type !== 'segment')) {
       throw new Error(`Expected line or segment ${id}`);
     }

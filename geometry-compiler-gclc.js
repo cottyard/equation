@@ -18,6 +18,10 @@
         lines.push(`line ${object.id} ${object.through[0]} ${object.through[1]}`);
       } else if (object.type === 'segment') {
         lines.push(`segment ${object.id} ${object.through[0]} ${object.through[1]}`);
+      } else if (object.type === 'circle') {
+        lines.push(`circle ${object.id} ${object.center} ${object.radius || object.through}`);
+      } else if (object.type === 'function') {
+        lines.push(`function ${object.id} ${object.equation}`);
       }
     }
 
@@ -48,6 +52,58 @@
   }
 
   function formatConstraint(constraint) {
+    if (constraint.type === 'midpoint') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+      ].join(' ');
+    }
+    if (constraint.type === 'equalLength') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+      ].join(' ');
+    }
+    if (constraint.type === 'segmentLength') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+        constraint.length,
+      ].join(' ');
+    }
+    if (constraint.type === 'lengthRatio') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+        constraint.ratio,
+      ].join(' ');
+    }
+    if (constraint.type === 'pointOnInverse') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+        constraint.k,
+      ].join(' ');
+    }
+    if (constraint.type === 'pointOnLineEquation') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+        'slope',
+        constraint.slope,
+        'intercept',
+        constraint.interceptPoint || constraint.intercept || 0,
+      ].join(' ');
+    }
+    if (constraint.type === 'pointOnParabola') {
+      return [
+        constraint.type,
+        ...(constraint.args || []),
+        constraint.parabola.a,
+        constraint.parabola.b,
+        constraint.parabola.c || 0,
+      ].join(' ');
+    }
     if (constraint.type === 'rightTriangle30_60') {
       return [
         constraint.type,

@@ -182,6 +182,19 @@ body {
   font-size: 18px;
 }
 
+.question-main,
+.question-figures {
+  min-width: 0;
+}
+
+[data-section-type="solution"] .question.has-figures .question-layout {
+  grid-template-columns: 1fr;
+}
+
+[data-section-type="solution"] .question.has-figures .question-figures {
+  max-width: 720px;
+}
+
 .question-options {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
@@ -249,10 +262,37 @@ body {
   padding: 10px 0 0;
 }
 
-.exam-figure svg {
+.exam-figure > svg {
   display: block;
   width: 100%;
   max-height: 300px;
+}
+
+.exam-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.photo-figure {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(170px, 1.1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.photo-panel {
+  min-width: 0;
+}
+
+.photo-panel > svg {
+  max-height: 220px;
+}
+
+.real-photo img {
+  max-height: 230px;
+  object-fit: contain;
+  border: 1px solid #1f2937;
 }
 
 .geometry-board {
@@ -261,6 +301,20 @@ body {
   min-height: 220px;
   border: 0;
   background: #fffdfa;
+}
+
+.geometry-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.geometry-panel {
+  min-width: 0;
+}
+
+.geometry-panel .geometry-board {
+  min-height: 190px;
 }
 
 .geometry-board .JXGtext {
@@ -300,6 +354,10 @@ body {
   fill: #f2f4f7;
 }
 
+.geo-top-face {
+  fill: #fafbfc;
+}
+
 .geo-thin {
   stroke: #111827;
   stroke-width: 1.3;
@@ -320,6 +378,13 @@ body {
   fill: #fff;
   stroke: #111827;
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.geo-model-sample {
+  fill: #0f766e;
+  stroke: #fffdfa;
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
 }
 
@@ -380,6 +445,14 @@ body {
   }
 
   .question-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .photo-figure {
+    grid-template-columns: 1fr;
+  }
+
+  .geometry-pair {
     grid-template-columns: 1fr;
   }
 

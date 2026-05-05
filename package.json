@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./pack.ps1 -IncludeReadme",
-    "test": "node test.js && node exam-data.test.js && node exam-renderer.test.js && node geometry.test.js && node browser-smoke.js"
+    "test": "node test.js && node exam-data.test.js && node figure-models.test.js && node exam-renderer.test.js && node geometry.test.js && node browser-smoke.js"
   },
   "dependencies": {
     "jsxgraph": "^1.12.2",

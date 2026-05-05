@@ -26,20 +26,22 @@
       { id: 'q16-rotation', title: '第16题 平行四边形旋转图', kind: 'svg', renderer: 'parallelogramRotation' },
       { id: 'q20-medians', title: '第20题 等腰三角形中线图', kind: 'svg', renderer: 'triangleMedians' },
       { id: 'q21-bmi-charts', title: '第21题 BMI条形统计图与扇形统计图', kind: 'svg', renderer: 'bmiCharts' },
-      { id: 'q23-measurement', title: '第23题 纪念碑高度测量示意图', kind: 'svg', renderer: 'monumentMeasurement' },
+      {
+        id: 'q23-measurement',
+        title: '第23题 纪念碑实物照片与高度测量示意图',
+        kind: 'mixed',
+        renderer: 'monumentMeasurement',
+        photo: {
+          src: 'assets/q23-monument-photo.png',
+          alt: '苏州烈士陵园纪念碑实物照片',
+        },
+      },
       { id: 'q24-functions', title: '第24题 反比例函数与一次函数图像', kind: 'svg', renderer: 'inverseProportion' },
       { id: 'q25-circle', title: '第25题 圆与切线图', kind: 'svg', renderer: 'circleTangent' },
       { id: 'q26-parabolas', title: '第26题 抛物线与矩形示意图', kind: 'svg', renderer: 'parabolas' },
       { id: 'q27-golden', title: '第27题 正方形、矩形中的黄金分割图', kind: 'svg', renderer: 'goldenGeometry' },
     ],
-    omittedAssets: [
-      {
-        questionId: 23,
-        kind: 'real-photo',
-        label: '苏州烈士陵园纪念碑实物照片',
-        reason: '该区域是真实照片，不是几何示意图；按需求不做数字化重绘。',
-      },
-    ],
+    omittedAssets: [],
     sections: [
       {
         type: 'choice',
@@ -316,7 +318,7 @@
                 type: 'table',
                 rows: [
                   ['活动主题', '测量纪念碑的高度'],
-                  ['实物图和测量示意图', '真实纪念碑照片按要求省略；测量示意图见下方矢量图。'],
+                  ['实物图和测量示意图', '实物照片和测量示意图见下方。'],
                   ['测量步骤', raw`如图，某同学在点$C$处用测角仪测得纪念碑$AB$的最高点$A$的仰角，另一名同学在他的正后方16 m的点$E$处用相同的测角仪测得点$A$的仰角（测角仪的高度为1.5 m），且图中所有的点$A$，$B$，$C$，$D$，$E$，$F$都在同一平面内，$AB\perp BE$，$DC\perp BE$，$FE\perp BE$，垂足分别为$B$，$C$，$E$。`],
                   ['测量数据', raw`在点$C$处测得点$A$的仰角为$42^\circ$，在点$E$处测得点$A$的仰角为$30^\circ$。`],
                   ['参考数据', raw`$\sin42^\circ\approx0.67$，$\cos42^\circ\approx0.74$，$\tan42^\circ\approx0.90$，$\sqrt3\approx1.73$`],

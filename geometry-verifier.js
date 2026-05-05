@@ -159,6 +159,228 @@
     };
   }
 
+  function coordinatesFromMidpoint(scene, construct) {
+    const first = dsl.getPoint(scene, construct.between[0]);
+    const second = dsl.getPoint(scene, construct.between[1]);
+    return {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    };
+  }
+
+  function coordinatesFromMirrorPoint(scene, construct) {
+    const point = dsl.getPoint(scene, construct.point);
+    const [a, b] = construct.axisThrough.map(id => dsl.getPoint(scene, id));
+    const axis = vector(a, b);
+    const denominator = dot(axis, axis);
+    const t = denominator < EPSILON ? 0 : dot(vector(a, point), axis) / denominator;
+    const foot = {
+      x: a.x + axis.x * t,
+      y: a.y + axis.y * t,
+    };
+    return {
+      x: 2 * foot.x - point.x,
+      y: 2 * foot.y - point.y,
+    };
+  }
+
+  function coordinatesFromPointReflection(scene, construct) {
+    const point = dsl.getPoint(scene, construct.point);
+    const center = dsl.getPoint(scene, construct.center);
+    return {
+      x: 2 * center.x - point.x,
+      y: 2 * center.y - point.y,
+    };
+  }
+
+  function coordinatesFromPerpendicularPointAtDistance(scene, construct) {
+    const from = dsl.getPoint(scene, construct.from);
+    const reference = dsl.getPoint(scene, construct.reference);
+    const base = vector(from, reference);
+    const baseLength = length(base);
+    const sign = construct.rotate === 'clockwise' ? -1 : 1;
+    return {
+      x: from.x + (-sign * base.y / baseLength) * construct.distance,
+      y: from.y + (sign * base.x / baseLength) * construct.distance,
+    };
+  }
+
+  function coordinatesFromRatioPoint(scene, construct) {
+    const from = dsl.getPoint(scene, construct.from);
+    const to = dsl.getPoint(scene, construct.to);
+    const ratio = construct.ratio;
+    return {
+      x: from.x + (to.x - from.x) * ratio,
+      y: from.y + (to.y - from.y) * ratio,
+    };
+  }
+
+  function coordinatesFromLineIntersection(scene, construct) {
+    const [a1, a2] = construct.first.map(id => dsl.getPoint(scene, id));
+    const [b1, b2] = construct.second.map(id => dsl.getPoint(scene, id));
+    const r = vector(a1, a2);
+    const s = vector(b1, b2);
+    const denominator = cross(r, s);
+    const t = Math.abs(denominator) < EPSILON ? 0 : cross(vector(a1, b1), s) / denominator;
+    return {
+      x: a1.x + r.x * t,
+      y: a1.y + r.y * t,
+    };
+  }
+
+  function coordinatesFromParallelPoint(scene, construct) {
+    const from = dsl.getPoint(scene, construct.from);
+    const [a, b] = construct.parallelTo.map(id => dsl.getPoint(scene, id));
+    return {
+      x: from.x + (b.x - a.x),
+      y: from.y + (b.y - a.y),
+    };
+  }
+
+  function coordinatesFromPerpendicularPoint(scene, construct) {
+    const from = dsl.getPoint(scene, construct.from);
+    const [a, b] = construct.perpendicularTo.map(id => dsl.getPoint(scene, id));
+    const base = vector(a, b);
+    const baseLength = length(base);
+    const sign = construct.rotate === 'clockwise' ? -1 : 1;
+    const scale = construct.length || baseLength || 1;
+    return {
+      x: from.x + (-sign * base.y / baseLength) * scale,
+      y: from.y + (sign * base.x / baseLength) * scale,
+    };
+  }
+
+  function coordinatesFromTranslatedPoint(scene, construct) {
+    const from = dsl.getPoint(scene, construct.from);
+    const start = dsl.getPoint(scene, construct.vector[0]);
+    const end = dsl.getPoint(scene, construct.vector[1]);
+    return {
+      x: from.x + end.x - start.x,
+      y: from.y + end.y - start.y,
+    };
+  }
+
+  function coordinatesFromCopyDistanceOnSegment(scene, construct) {
+    const sourceStart = dsl.getPoint(scene, construct.source[0]);
+    const sourceEnd = dsl.getPoint(scene, construct.source[1]);
+    const targetStart = dsl.getPoint(scene, construct.target[0]);
+    const targetEnd = dsl.getPoint(scene, construct.target[1]);
+    const sourceLength = length(vector(sourceStart, sourceEnd));
+    const targetVector = vector(targetStart, targetEnd);
+    const targetLength = length(targetVector);
+    const direction = construct.fromEnd ? vector(targetEnd, targetStart) : targetVector;
+    const directionLength = length(direction);
+    const start = construct.fromEnd ? targetEnd : targetStart;
+    return {
+      x: start.x + direction.x / directionLength * sourceLength,
+      y: start.y + direction.y / directionLength * sourceLength,
+      ratio: sourceLength / targetLength,
+    };
+  }
+
+  function coordinatesFromPointFromVectorBasis(scene, construct) {
+    const origin = dsl.getPoint(scene, construct.origin);
+    const axisEnd = dsl.getPoint(scene, construct.axisEnd);
+    const axis = vector(origin, axisEnd);
+    const sign = construct.orientation === 'clockwise' ? -1 : 1;
+    const normal = { x: -sign * axis.y, y: sign * axis.x };
+    return {
+      x: origin.x + axis.x * construct.xRatio + normal.x * construct.yRatio,
+      y: origin.y + axis.y * construct.xRatio + normal.y * construct.yRatio,
+    };
+  }
+
+  function lineIntercept(scene, source) {
+    if (typeof source.intercept === 'number') {
+      return source.intercept;
+    }
+    if (source.interceptPoint) {
+      return dsl.getPoint(scene, source.interceptPoint).y;
+    }
+    return 0;
+  }
+
+  function parabolaValue(source, x) {
+    return source.a * x * x + source.b * x + (source.c || 0);
+  }
+
+  function coordinatesFromInverseLineIntersection(scene, construct) {
+    const slope = construct.slope;
+    const intercept = lineIntercept(scene, construct);
+    const k = construct.k;
+    const discriminant = intercept * intercept - 4 * slope * -k;
+    const root = Math.sqrt(Math.max(0, discriminant));
+    const roots = [
+      (-intercept + root) / (2 * slope),
+      (-intercept - root) / (2 * slope),
+    ];
+    const x = construct.branch === 'positive'
+      ? roots.find(value => value > 0) || Math.max(...roots)
+      : roots.find(value => value < 0) || Math.min(...roots);
+    return {
+      x,
+      y: slope * x + intercept,
+    };
+  }
+
+  function coordinatesFromLineXIntercept(scene, construct) {
+    const intercept = lineIntercept(scene, construct);
+    return {
+      x: -intercept / construct.slope,
+      y: 0,
+    };
+  }
+
+  function coordinatesFromVerticalPointToY(scene, construct) {
+    const base = dsl.getPoint(scene, construct.base);
+    const y = typeof construct.y === 'number' ? construct.y : dsl.getPoint(scene, construct.yPoint).y;
+    return { x: base.x, y };
+  }
+
+  function coordinatesFromVerticalPointToParabola(scene, construct) {
+    const base = dsl.getPoint(scene, construct.base);
+    return { x: base.x, y: parabolaValue(construct.parabola, base.x) };
+  }
+
+  function coordinatesFromRectangleTopRightOnParabola(scene, construct) {
+    const base = dsl.getPoint(scene, construct.base);
+    return {
+      x: construct.sumX - base.x,
+      y: 0,
+    };
+  }
+
+  function coordinatesFromFixedRectanglePointOnParabola(_scene, construct) {
+    const x = construct.sumX - construct.t;
+    return {
+      x,
+      y: parabolaValue(construct.parabola, x),
+    };
+  }
+
+  function coordinatesFromSameLineParabolaIntersection(scene, construct) {
+    const through = dsl.getPoint(scene, construct.through);
+    const pointOnFirst = dsl.getPoint(scene, construct.pointOnFirst);
+    const dx = pointOnFirst.x - through.x;
+    const dy = pointOnFirst.y - through.y;
+    if (Math.abs(dx) < EPSILON) {
+      return { x: through.x, y: parabolaValue(construct.targetParabola, through.x) };
+    }
+    const slope = dy / dx;
+    const intercept = through.y - slope * through.x;
+    const a = construct.targetParabola.a;
+    const b = construct.targetParabola.b - slope;
+    const c = (construct.targetParabola.c || 0) - intercept;
+    const discriminant = b * b - 4 * a * c;
+    const root = Math.sqrt(Math.max(0, discriminant));
+    const roots = [
+      (-b + root) / (2 * a),
+      (-b - root) / (2 * a),
+    ];
+    const x = Math.abs(roots[0] - through.x) > Math.abs(roots[1] - through.x) ? roots[0] : roots[1];
+    return { x, y: slope * x + intercept };
+  }
+
   function coordinatesFromConstruct(scene, construct) {
     if (construct.type === 'pointOnRay') {
       return coordinatesFromPointOnRay(scene, construct);
@@ -174,6 +396,60 @@
     }
     if (construct.type === 'orthogonalProjection') {
       return coordinatesFromOrthogonalProjection(scene, construct);
+    }
+    if (construct.type === 'midpoint') {
+      return coordinatesFromMidpoint(scene, construct);
+    }
+    if (construct.type === 'mirrorPoint') {
+      return coordinatesFromMirrorPoint(scene, construct);
+    }
+    if (construct.type === 'pointReflection') {
+      return coordinatesFromPointReflection(scene, construct);
+    }
+    if (construct.type === 'perpendicularPointAtDistance') {
+      return coordinatesFromPerpendicularPointAtDistance(scene, construct);
+    }
+    if (construct.type === 'ratioPoint') {
+      return coordinatesFromRatioPoint(scene, construct);
+    }
+    if (construct.type === 'lineIntersection') {
+      return coordinatesFromLineIntersection(scene, construct);
+    }
+    if (construct.type === 'parallelPoint') {
+      return coordinatesFromParallelPoint(scene, construct);
+    }
+    if (construct.type === 'perpendicularPoint') {
+      return coordinatesFromPerpendicularPoint(scene, construct);
+    }
+    if (construct.type === 'translatedPoint') {
+      return coordinatesFromTranslatedPoint(scene, construct);
+    }
+    if (construct.type === 'copyDistanceOnSegment') {
+      return coordinatesFromCopyDistanceOnSegment(scene, construct);
+    }
+    if (construct.type === 'pointFromVectorBasis') {
+      return coordinatesFromPointFromVectorBasis(scene, construct);
+    }
+    if (construct.type === 'inverseLineIntersection') {
+      return coordinatesFromInverseLineIntersection(scene, construct);
+    }
+    if (construct.type === 'lineXIntercept') {
+      return coordinatesFromLineXIntercept(scene, construct);
+    }
+    if (construct.type === 'verticalPointToY') {
+      return coordinatesFromVerticalPointToY(scene, construct);
+    }
+    if (construct.type === 'verticalPointToParabola') {
+      return coordinatesFromVerticalPointToParabola(scene, construct);
+    }
+    if (construct.type === 'rectangleTopRightOnParabola') {
+      return coordinatesFromRectangleTopRightOnParabola(scene, construct);
+    }
+    if (construct.type === 'fixedRectanglePointOnParabola') {
+      return coordinatesFromFixedRectanglePointOnParabola(scene, construct);
+    }
+    if (construct.type === 'sameLineParabolaIntersection') {
+      return coordinatesFromSameLineParabolaIntersection(scene, construct);
     }
     throw new Error(`Unsupported point construction ${construct.type}`);
   }
@@ -251,6 +527,65 @@
       const [a1, a2] = dsl.getSegmentPoints(scene, segmentA);
       const [b1, b2] = dsl.getSegmentPoints(scene, segmentB);
       const residual = dot(vector(a1, a2), vector(b1, b2));
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'equalLength') {
+      const [segmentA, segmentB] = constraint.args;
+      const [a1, a2] = dsl.getSegmentPoints(scene, segmentA);
+      const [b1, b2] = dsl.getSegmentPoints(scene, segmentB);
+      const residual = length(vector(a1, a2)) - length(vector(b1, b2));
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'midpoint') {
+      const [pointId, endAId, endBId] = constraint.args;
+      const point = dsl.getPoint(scene, pointId);
+      const endA = dsl.getPoint(scene, endAId);
+      const endB = dsl.getPoint(scene, endBId);
+      const expected = {
+        x: (endA.x + endB.x) / 2,
+        y: (endA.y + endB.y) / 2,
+      };
+      const residual = Math.hypot(point.x - expected.x, point.y - expected.y);
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'segmentLength') {
+      const [segmentId] = constraint.args;
+      const [a, b] = dsl.getSegmentPoints(scene, segmentId);
+      const residual = length(vector(a, b)) - constraint.length;
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'lengthRatio') {
+      const [segmentA, segmentB] = constraint.args;
+      const [a1, a2] = dsl.getSegmentPoints(scene, segmentA);
+      const [b1, b2] = dsl.getSegmentPoints(scene, segmentB);
+      const segmentBLength = length(vector(b1, b2));
+      const residual = length(vector(a1, a2)) / segmentBLength - constraint.ratio;
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'pointOnInverse') {
+      const [pointId] = constraint.args;
+      const point = dsl.getPoint(scene, pointId);
+      const residual = point.x * point.y - constraint.k;
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'pointOnLineEquation') {
+      const [pointId] = constraint.args;
+      const point = dsl.getPoint(scene, pointId);
+      const intercept = lineIntercept(scene, constraint);
+      const residual = point.y - (constraint.slope * point.x + intercept);
+      return { ...constraint, ok: isZero(residual), residual };
+    }
+
+    if (constraint.type === 'pointOnParabola') {
+      const [pointId] = constraint.args;
+      const point = dsl.getPoint(scene, pointId);
+      const residual = point.y - parabolaValue(constraint.parabola, point.x);
       return { ...constraint, ok: isZero(residual), residual };
     }
 

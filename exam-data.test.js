@@ -38,12 +38,13 @@ for (const item of items) {
 
 for (const figure of paper.figures) {
   assert(figure.title && figure.title.trim(), `figure ${figure.id} should have a title`);
-  assert(figure.kind === 'svg', `figure ${figure.id} should be rendered as svg`);
+  assert(['svg', 'mixed'].includes(figure.kind), `figure ${figure.id} should be rendered as svg or mixed media`);
 }
 
-const omitted = paper.omittedAssets || [];
-const q23Photo = omitted.find(asset => asset.questionId === 23 && asset.kind === 'real-photo');
-assert(q23Photo, 'question 23 real monument photo should be explicitly omitted');
-assert(q23Photo.reason.includes('真实照片'), 'question 23 omission should explain it is a real photo');
+assert((paper.omittedAssets || []).length === 0, 'all exam figures should now be represented on the page');
+const q23Figure = paper.figures.find(figure => figure.id === 'q23-measurement');
+assert(q23Figure.kind === 'mixed', 'question 23 should combine the original photo and vector measurement diagram');
+assert(q23Figure.photo && q23Figure.photo.src === 'assets/q23-monument-photo.png', 'question 23 should reference the cropped original monument photo');
+assert(q23Figure.photo.alt.includes('苏州烈士陵园纪念碑'), 'question 23 photo should have a specific alt label');
 
 console.log('exam data tests passed');

@@ -71,6 +71,41 @@
     return `<text ${attrs({ x, y, class: className, ...extra })}>${value}</text>`;
   }
 
+  function formatNumber(value) {
+    return Number.parseFloat(value.toFixed(2));
+  }
+
+  function pointString(points) {
+    return points.map(point => `${formatNumber(point[0])},${formatNumber(point[1])}`).join(' ');
+  }
+
+  function boundsOf(points) {
+    return points.reduce((box, point) => ({
+      minX: Math.min(box.minX, point[0]),
+      maxX: Math.max(box.maxX, point[0]),
+      minY: Math.min(box.minY, point[1]),
+      maxY: Math.max(box.maxY, point[1]),
+    }), {
+      minX: Infinity,
+      maxX: -Infinity,
+      minY: Infinity,
+      maxY: -Infinity,
+    });
+  }
+
+  function createFitTransform(points, target) {
+    const box = boundsOf(points);
+    const sourceWidth = box.maxX - box.minX || 1;
+    const sourceHeight = box.maxY - box.minY || 1;
+    const scale = Math.min(target.width / sourceWidth, target.height / sourceHeight);
+    const padX = (target.width - sourceWidth * scale) / 2;
+    const padY = (target.height - sourceHeight * scale) / 2;
+    return point => [
+      target.x + padX + (point[0] - box.minX) * scale,
+      target.y + padY + (point[1] - box.minY) * scale,
+    ];
+  }
+
   function getFigureGeometry(id) {
     const problemsApi = root.GeometryProblems || (typeof require === 'function' ? require('./geometry-problems.js') : null);
     const dslApi = root.GeometryDsl || (typeof require === 'function' ? require('./geometry-dsl.js') : null);
@@ -85,19 +120,62 @@
     return { points, segments: scene.view.visibleSegments.slice() };
   }
 
+  function getFigureModelApi() {
+    return root.FigureModels || (typeof require === 'function' ? require('./figure-models.js') : null);
+  }
+
+  function getFigureModel(id) {
+    const modelsApi = getFigureModelApi();
+    return modelsApi ? modelsApi.getFigureModel(id) : null;
+  }
+
+  function scaleTilePoint(point) {
+    return [
+      20 + point[0] * 38,
+      18 + point[1] * 38,
+    ];
+  }
+
   const figureRenderers = {
     mortiseViews() {
-      const base = [
-        polygon('34,87 112,65 153,88 153,139 54,166 34,145', 'geo-shape'),
-        polygon('34,87 54,101 54,166 34,145', 'geo-shape geo-muted'),
-        polygon('54,101 153,88 153,139 54,166', 'geo-shape'),
-        polygon('64,57 120,40 139,58 83,76', 'geo-shape'),
-        polygon('64,57 83,76 91,102 73,93', 'geo-shape geo-muted'),
-        polygon('83,76 139,58 132,82 91,102', 'geo-shape'),
-        line(91, 137, 107, 125),
-        text(104, 153, '正面', 'geo-label'),
-        line(100, 132, 115, 148, 'geo-thin'),
+      const model = getFigureModel('q2-mortise');
+      const modelsApi = getFigureModelApi();
+      const projection = modelsApi.projectSolid(model);
+      const projectedPoints = [
+        ...projection.faces.flatMap(face => face.points),
+        ...projection.edges.flatMap(edge => [edge.fromPoint, edge.toPoint]),
+      ];
+      const solidTransform = createFitTransform(projectedPoints, { x: 18, y: 20, width: 160, height: 130 });
+      const solidFaceClass = shade => ({
+        front: 'geo-shape',
+        top: 'geo-shape geo-top-face',
+        side: 'geo-shape geo-muted',
+      })[shade] || 'geo-shape';
+      const solid = [
+        ...projection.faces.map(face => polygon(
+          pointString(face.points.map(solidTransform)),
+          solidFaceClass(face.shade),
+          { 'data-solid-face': face.id },
+        )),
+        ...projection.edges.map(edge => line(
+          ...solidTransform(edge.fromPoint),
+          ...solidTransform(edge.toPoint),
+          'geo-line',
+          { 'data-solid-edge-role': edge.role },
+        )),
+        line(86, 145, 128, 168, 'geo-thin'),
+        polygon('81,141 92,143 87,151', 'axis-fill'),
+        text(102, 188, '正面', 'geo-option-label'),
       ].join('');
+
+      function profilePolygon(x, y, width, height, extra = {}) {
+        const transform = createFitTransform(
+          model.frontView.profile.map(point => [point[0], -point[1]]),
+          { x, y, width, height },
+        );
+        const points = model.frontView.profile.map(point => transform([point[0], -point[1]]));
+        return polygon(pointString(points), 'geo-shape', extra);
+      }
 
       function optionShape(x, y, label, kind) {
         let body = '';
@@ -106,20 +184,25 @@
         } else if (kind === 'B') {
           body = rect(x + 25, y + 18, 62, 112, 'geo-shape') + line(x + 25, y + 74, x + 87, y + 74);
         } else if (kind === 'C') {
-          body = polygon(`${x},${y + 78} ${x + 23},${y + 78} ${x + 13},${y + 52} ${x + 115},${y + 52} ${x + 105},${y + 78} ${x + 130},${y + 78} ${x + 130},${y + 122} ${x},${y + 122}`, 'geo-shape');
+          body = profilePolygon(x, y + 42, 130, 76, { 'data-front-view-profile': 'dovetail' });
         } else {
           body = rect(x, y + 56, 146, 54, 'geo-shape') + line(x + 34, y + 56, x + 34, y + 110) + line(x + 88, y + 56, x + 88, y + 110, 'geo-dash') + line(x + 120, y + 56, x + 120, y + 110, 'geo-dash');
         }
-        return `<g>${body}${text(x + 48, y + 143, label, 'geo-option-label')}</g>`;
+        return `<g ${attrs({ 'data-projection-option': kind })}>${body}${text(x + 48, y + 143, label, 'geo-option-label')}</g>`;
       }
 
       return svg(760, 230, [
-        `<g transform="translate(15 18)">${base}</g>`,
-        optionShape(215, 42, 'A', 'A'),
-        optionShape(350, 22, 'B', 'B'),
-        optionShape(470, 25, 'C', 'C'),
-        optionShape(615, 25, 'D', 'D'),
-      ].join(''), { 'aria-label': '燕尾榫几何示意与四个主视图选项' });
+        solid,
+        optionShape(215, 42, model.options[0].label, model.options[0].id),
+        optionShape(350, 22, model.options[1].label, model.options[1].id),
+        optionShape(470, 25, model.options[2].label, model.options[2].id),
+        optionShape(615, 25, model.options[3].label, model.options[3].id),
+      ].join(''), {
+        'aria-label': '燕尾榫几何示意与四个主视图选项',
+        'data-figure-model': model.id,
+        'data-solid-kind': model.object.kind,
+        'data-front-view-option': model.frontView.optionId,
+      });
     },
 
     parallelBoard() {
@@ -131,40 +214,52 @@
       }, '');
     },
 
+    geometryScene(figure) {
+      return tag('div', {
+        class: 'geometry-board',
+        'data-geometry-id': figure.id,
+        role: 'img',
+        'aria-label': `${figure.title}，可拖动满足题目约束的控制点`,
+      }, '');
+    },
+
     rhombus() {
-      return svg(360, 220, [
-        polygon('65,168 144,42 302,42 223,168', 'geo-shape'),
-        line(144, 42, 223, 168),
-        line(65, 168, 302, 42),
-        line(118, 107, 184, 107),
-        line(184, 107, 223, 168),
-        circle(184, 107, 4), circle(166, 83, 4),
-        text(139, 33, 'A'), text(50, 178, 'B'), text(227, 180, 'C'), text(307, 39, 'D'),
-        text(175, 100, 'F'), text(103, 112, 'E'), text(181, 90, 'O'),
-      ].join(''), { 'aria-label': '菱形对角线和EF平行BC的示意图' });
+      return figureRenderers.geometryScene({
+        id: 'q7-rhombus',
+        title: '第7题 菱形与辅助线',
+      });
     },
 
     tileProbability() {
+      const model = getFigureModel('q13-tile');
+      const modelsApi = getFigureModelApi();
+      const probability = modelsApi.computeTileProbability(model);
       const cells = [];
       for (let r = 0; r < 4; r += 1) {
         for (let c = 0; c < 4; c += 1) {
           cells.push(rect(20 + c * 38, 18 + r * 38, 38, 38, 'geo-grid'));
         }
       }
-      const shade = [
-        polygon('20,18 58,18 20,56', 'geo-hatch'),
-        polygon('134,18 172,18 172,56', 'geo-hatch'),
-        polygon('20,132 58,170 20,170', 'geo-hatch'),
-        polygon('134,170 172,132 172,170', 'geo-hatch'),
-        polygon('77,76 96,57 115,76 96,95', 'geo-hatch'),
-        polygon('77,114 96,95 115,114 96,133', 'geo-hatch'),
-        polygon('58,95 77,76 96,95 77,114', 'geo-hatch'),
-        polygon('96,95 115,76 134,95 115,114', 'geo-hatch'),
-      ].join('');
-      return svg(210, 205, `${cells.join('')}${shade}`, { 'aria-label': '4乘4地砖阴影区域示意' });
+      const shade = model.shadedRegions.map(region => {
+        const points = region.points.map(scaleTilePoint).map(point => point.join(',')).join(' ');
+        return polygon(points, 'geo-hatch', { 'data-shaded-region': region.id });
+      }).join('');
+      const samples = model.samples.map(sample => {
+        const [cx, cy] = scaleTilePoint(sample.point);
+        return circle(cx, cy, 2.8, 'geo-model-sample', { 'data-shading-sample': sample.id });
+      }).join('');
+      return svg(210, 205, `${cells.join('')}${shade}${samples}`, {
+        'aria-label': '4乘4地砖阴影区域示意',
+        'data-figure-model': model.id,
+        'data-shaded-area': probability.shadedArea,
+        'data-probability': probability.probability,
+      });
     },
 
     magicSquare() {
+      const model = getFigureModel('q15-magic-square');
+      const modelsApi = getFigureModelApi();
+      const relation = modelsApi.deriveMagicSquareRelation(model);
       const beads = [
         [65, 22], [53, 34], [77, 34],
         [35, 60], [35, 84], [35, 108],
@@ -190,36 +285,31 @@
         text(245, 153, 'c'),
         text(245, 190, '图2', 'geo-caption'),
       ].join('');
-      return svg(350, 205, luoshu + square, { 'aria-label': '洛书点阵与含abc的三阶幻方' });
+      return svg(350, 205, luoshu + square, {
+        'aria-label': '洛书点阵与含abc的三阶幻方',
+        'data-figure-model': model.id,
+        'data-magic-relation': relation.normalized,
+      });
     },
 
     parallelogramRotation() {
-      return svg(360, 245, [
-        polygon('60,145 142,196 278,150 196,99', 'geo-shape'),
-        polygon('60,145 170,52 315,105 196,99', 'geo-shape'),
-        line(60, 145, 278, 150),
-        line(142, 196, 196, 99),
-        line(60, 145, 196, 99),
-        line(170, 52, 196, 99),
-        line(315, 105, 196, 99),
-        circle(154, 160, 4),
-        text(46, 150, 'A'), text(134, 213, 'B'), text(285, 160, 'C'), text(198, 92, 'D'),
-        text(149, 156, 'E'), text(319, 105, 'F'), text(168, 43, 'G'),
-      ].join(''), { 'aria-label': '平行四边形绕A点旋转后的几何关系图' });
+      return figureRenderers.geometryScene({
+        id: 'q16-rotation',
+        title: '第16题 平行四边形旋转图',
+      });
     },
 
     triangleMedians() {
-      return svg(260, 240, [
-        polygon('130,22 38,208 222,208', 'geo-shape'),
-        line(38, 208, 178, 116),
-        line(222, 208, 82, 116),
-        circle(82, 116, 4), circle(178, 116, 4),
-        text(124, 16, 'A'), text(25, 218, 'B'), text(225, 218, 'C'),
-        text(70, 116, 'D'), text(184, 116, 'E'),
-      ].join(''), { 'aria-label': '等腰三角形中线BE和CD示意图' });
+      return figureRenderers.geometryScene({
+        id: 'q20-medians',
+        title: '第20题 等腰三角形中线图',
+      });
     },
 
     bmiCharts() {
+      const model = getFigureModel('q21-bmi-charts');
+      const modelsApi = getFigureModelApi();
+      const summary = modelsApi.computeBmiSummary(model);
       const bars = [
         rect(80, 90, 30, 90, 'chart-bar'),
         rect(140, 157, 30, 23, 'chart-bar'),
@@ -246,105 +336,68 @@
         text(338, 96, 'C', 'geo-small'),
         text(350, 38, 'D 5%', 'geo-small'),
       ].join('');
-      return svg(500, 220, chart + pie, { 'aria-label': 'BMI分组的条形统计图和扇形统计图' });
+      return svg(500, 220, chart + pie, {
+        'aria-label': 'BMI分组的条形统计图和扇形统计图',
+        'data-figure-model': model.id,
+        'data-total-count': summary.total,
+        'data-missing-a': summary.missing.A,
+        'data-normal-percent': summary.percentages.B,
+      });
     },
 
-    monumentMeasurement() {
-      return svg(340, 220, [
-        line(40, 182, 300, 182),
-        line(55, 182, 55, 42),
-        line(175, 182, 175, 112),
-        line(270, 182, 270, 128),
-        line(55, 42, 175, 112),
-        line(55, 42, 270, 128),
-        line(55, 42, 270, 182),
-        text(47, 35, 'A'), text(43, 197, 'B'), text(169, 197, 'C'), text(168, 108, 'D'),
-        text(264, 197, 'E'), text(264, 124, 'F'),
-        path('M160 182 A32 32 0 0 0 149 158', 'geo-thin'),
-        text(139, 163, '42°', 'geo-small'),
-        path('M248 182 A35 35 0 0 0 238 164', 'geo-thin'),
-        text(230, 164, '30°', 'geo-small'),
-        text(208, 200, '16 m', 'geo-small'),
-      ].join(''), { 'aria-label': '纪念碑高度测量平面示意图' });
+    monumentMeasurement(figure) {
+      const diagram = figureRenderers.geometryScene({
+        id: 'q23-measurement',
+        title: '第23题 纪念碑高度测量示意图',
+      });
+      if (!figure.photo) return diagram;
+      const photo = tag('img', {
+        src: figure.photo.src,
+        alt: figure.photo.alt,
+        loading: 'eager',
+      });
+      return tag('div', { class: 'photo-figure' }, [
+        tag('div', { class: 'photo-panel real-photo' }, photo),
+        tag('div', { class: 'photo-panel vector-diagram' }, diagram),
+      ].join(''));
     },
 
     inverseProportion() {
-      return svg(390, 260, [
-        line(190, 225, 190, 24, 'axis'),
-        line(40, 150, 350, 150, 'axis'),
-        polygon('190,24 185,35 195,35', 'axis-fill'),
-        polygon('350,150 338,145 338,155', 'axis-fill'),
-        text(198, 35, 'y'), text(352, 147, 'x'), text(176, 166, 'O'),
-        path('M52 136 C80 130 104 119 122 94 C136 74 143 52 150 30', 'geo-curve'),
-        path('M212 229 C220 199 238 176 268 166 C292 158 323 157 350 154', 'geo-curve'),
-        line(78, 44, 336, 214),
-        line(58, 100, 320, 205),
-        line(115, 118, 265, 172),
-        line(158, 83, 315, 190),
-        text(106, 134, 'A'), text(248, 202, 'B'), text(265, 183, 'C'), text(145, 92, 'D'),
-        text(194, 96, 'E'), text(307, 147, 'F'),
-      ].join(''), { 'aria-label': '反比例函数和两条平行直线的交点示意' });
+      return figureRenderers.geometryScene({
+        id: 'q24-functions',
+        title: '第24题 反比例函数与一次函数图像',
+      });
     },
 
     circleTangent() {
-      return svg(320, 300, [
-        circle(145, 190, 76, 'geo-shape', { fill: 'none' }),
-        line(55, 190, 245, 190),
-        line(182, 190, 182, 47),
-        line(55, 190, 182, 47),
-        line(95, 123, 182, 47),
-        line(95, 123, 225, 102),
-        line(225, 102, 182, 47),
-        text(48, 196, 'A'), text(249, 196, 'B'), text(139, 207, 'O'), text(176, 204, 'C'),
-        text(187, 43, 'D'), text(83, 122, 'E'), text(229, 105, 'F'),
-      ].join(''), { 'aria-label': '圆、直径、垂线和切线示意图' });
+      return figureRenderers.geometryScene({
+        id: 'q25-circle',
+        title: '第25题 圆与切线图',
+      });
     },
 
     parabolas() {
-      function one(x, label, second) {
-        const content = [
-          line(x + 20, 78, x + 260, 78, 'axis'),
-          line(x + 62, 20, x + 62, 210, 'axis'),
-          polygon(`${x + 260},78 ${x + 248},73 ${x + 248},83`, 'axis-fill'),
-          polygon(`${x + 62},20 ${x + 57},32 ${x + 67},32`, 'axis-fill'),
-          path(`M${x + 45} 20 C${x + 70} 122 ${x + 105} 218 ${x + 165} 218 C${x + 215} 218 ${x + 235} 90 ${x + 245} 20`, 'geo-curve'),
-          line(x + 92, 78, x + 92, 178),
-          line(x + 210, 78, x + 210, 178),
-          line(x + 92, 178, x + 210, 178),
-          text(x + 43, 95, 'O'), text(x + 96, 72, 'B'), text(x + 205, 72, 'A'), text(x + 254, 72, 'x'), text(x + 70, 28, 'y'),
-          text(x + 82, 188, 'C'), text(x + 211, 188, 'D'),
-          text(x + 135, 238, label, 'geo-caption'),
-        ];
-        if (second) {
-          content.push(path(`M${x + 135} 20 C${x + 150} 112 ${x + 180} 190 ${x + 230} 180 C${x + 258} 175 ${x + 270} 80 ${x + 283} 20`, 'geo-curve geo-alt'));
-          content.push(line(x + 45, 28, x + 230, 178, 'geo-dash'));
-        }
-        return content.join('');
-      }
-      return svg(620, 255, one(10, '图1', false) + one(320, '图2', true), { 'aria-label': '两幅抛物线与矩形位置示意图' });
+      const first = tag('div', { class: 'geometry-panel' }, [
+        figureRenderers.geometryScene({ id: 'q26-parabola-1', title: '第26题 图1 抛物线与可变矩形' }),
+        tag('div', { class: 'geo-caption' }, '图1'),
+      ].join(''));
+      const second = tag('div', { class: 'geometry-panel' }, [
+        figureRenderers.geometryScene({ id: 'q26-parabola-2', title: '第26题 图2 平移抛物线与过D直线' }),
+        tag('div', { class: 'geo-caption' }, '图2'),
+      ].join(''));
+      return tag('div', { class: 'geometry-pair' }, first + second);
     },
 
     goldenGeometry() {
-      function square(x, label, rectMode) {
-        const w = rectMode ? 210 : 190;
-        const h = 190;
-        const A = [x, 210], B = [x + w, 210], C = [x + w, 20], D = [x, 20];
-        const E = rectMode ? [x + w, 116] : [x + w, 112];
-        const F = rectMode ? [x + 83, 20] : [x + 88, 20];
-        const G = rectMode ? [x + 112, 117] : [x + 118, 120];
-        const M = rectMode ? [x + 86, 210] : [x + 95, 210];
-        return [
-          polygon(`${A} ${B} ${C} ${D}`, 'geo-shape'),
-          line(...A, ...E),
-          line(...B, ...F),
-          line(...C, ...M),
-          circle(...G, 4),
-          text(A[0] - 12, A[1] + 15, 'A'), text(B[0] + 5, B[1] + 14, 'B'), text(C[0] + 5, C[1] + 5, 'C'), text(D[0] - 12, D[1] + 5, 'D'),
-          text(E[0] + 6, E[1] + 5, 'E'), text(F[0] - 4, F[1] - 8, 'F'), text(G[0] - 14, G[1], 'G'), text(M[0] - 8, M[1] + 16, 'M'),
-          text(x + w / 2 - 10, 242, label, 'geo-caption'),
-        ].join('');
-      }
-      return svg(560, 260, square(35, '图1', false) + square(320, '图2', true), { 'aria-label': '正方形和矩形中的黄金分割几何图' });
+      const first = tag('div', { class: 'geometry-panel' }, [
+        figureRenderers.geometryScene({ id: 'q27-golden-1', title: '第27题 图1 正方形中的黄金分割关系' }),
+        tag('div', { class: 'geo-caption' }, '图1'),
+      ].join(''));
+      const second = tag('div', { class: 'geometry-panel' }, [
+        figureRenderers.geometryScene({ id: 'q27-golden-2', title: '第27题 图2 矩形中的黄金分割关系' }),
+        tag('div', { class: 'geo-caption' }, '图2'),
+      ].join(''));
+      return tag('div', { class: 'geometry-pair' }, first + second);
     },
   };
 
@@ -353,7 +406,7 @@
     if (!render) {
       return tag('div', { class: 'figure-missing' }, `缺少图形渲染器：${escapeHtml(figure.renderer)}`);
     }
-    return render();
+    return render(figure);
   }
 
   function renderBlock(block) {
@@ -498,6 +551,7 @@
     figureRenderers,
     getRenderableFigures,
     getFigureGeometry,
+    getFigureModel,
     mountPaper,
     mountGeometryBoards,
     renderPaperToHtml,
