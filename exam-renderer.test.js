@@ -45,6 +45,13 @@ assert(q5Renderable.svg.includes('data-geometry-id="q5-parallel-board"'), 'quest
 const q2Renderable = figures.find(figure => figure.id === 'q2-mortise');
 assert(q2Renderable.svg.includes('data-solid-face="top-tenon"'), 'question 2 should render the raised tenon top face');
 assert(!q2Renderable.svg.includes('34,87 112,65 153,88'), 'question 2 should not use the old hand-drawn solid polygon');
+assert(q2Renderable.svg.includes('data-projection-option="D"'), 'question 2 should render option D');
+assert((q2Renderable.svg.match(/data-projection-d-visible-divider/g) || []).length === 2, 'question 2 option D should show two solid visible inner dividers');
+assert((q2Renderable.svg.match(/data-projection-d-hidden-divider/g) || []).length === 2, 'question 2 option D should show two dashed hidden inner dividers');
+assert((q2Renderable.svg.match(/class="geo-line geo-dash"[^>]*data-projection-d-hidden-divider/g) || []).length === 2, 'question 2 option D hidden dividers should have both line and dashed styling');
+const q2SvgWidth = Number(q2Renderable.svg.match(/width="([0-9.]+)"/)[1]);
+const q2OptionDBox = q2Renderable.svg.match(/data-projection-option="D"[\s\S]*?<rect x="([0-9.-]+)" y="([0-9.-]+)" width="([0-9.-]+)" height="([0-9.-]+)"/);
+assert(q2OptionDBox && Number(q2OptionDBox[1]) + Number(q2OptionDBox[3]) < q2SvgWidth, 'question 2 option D should fit inside the SVG viewport');
 const q20Renderable = figures.find(figure => figure.id === 'q20-medians');
 assert(q20Renderable.svg.includes('data-geometry-id="q20-medians"'), 'question 20 should render an interactive geometry container');
 const q7Renderable = figures.find(figure => figure.id === 'q7-rhombus');
@@ -57,6 +64,32 @@ const q27Renderable = figures.find(figure => figure.id === 'q27-golden');
 assert(q27Renderable.svg.includes('data-geometry-id="q27-golden-1"') && q27Renderable.svg.includes('data-geometry-id="q27-golden-2"'), 'question 27 should render both golden-ratio figures as interactive geometry containers');
 const q26Renderable = figures.find(figure => figure.id === 'q26-parabolas');
 assert(q26Renderable.svg.includes('data-geometry-id="q26-parabola-1"') && q26Renderable.svg.includes('data-geometry-id="q26-parabola-2"'), 'question 26 should render both parabola figures as interactive geometry containers');
+const q15Renderable = figures.find(figure => figure.id === 'q15-magic-square');
+assert((q15Renderable.svg.match(/data-luoshu-open-dot/g) || []).length === 25, 'question 15 Luoshu should render the open-dot groups from the original figure');
+assert((q15Renderable.svg.match(/data-luoshu-filled-dot/g) || []).length === 20, 'question 15 Luoshu should render the filled-dot corner groups from the original figure');
+for (const [group, count] of Object.entries({
+  four: 4,
+  nine: 9,
+  two: 2,
+  three: 3,
+  five: 5,
+  seven: 7,
+  eight: 8,
+  one: 1,
+  six: 6,
+})) {
+  const matches = q15Renderable.svg.match(new RegExp(`data-luoshu-(?:open|filled)-dot="${group}"`, 'g')) || [];
+  assert(matches.length === count, `question 15 Luoshu group ${group} should contain ${count} dots`);
+}
+assert(q15Renderable.svg.includes('data-luoshu-group="nine"'), 'question 15 Luoshu should include the top row of nine open dots');
+assert(q15Renderable.svg.includes('data-luoshu-group="seven"'), 'question 15 Luoshu should include the right column of seven open dots');
+assert(q15Renderable.svg.includes('data-luoshu-group="five"'), 'question 15 Luoshu should include the center cross of open dots');
+const q15Dots = Array.from(q15Renderable.svg.matchAll(/<circle cx="([0-9.-]+)" cy="([0-9.-]+)" r="([0-9.-]+)" class="geo-(?:open-dot|fill)"[^>]*data-luoshu/g));
+assert(q15Dots.every(match => Number(match[1]) - Number(match[3]) >= 0), 'question 15 Luoshu dots should fit inside the SVG viewport');
+const luoshuPoints = group => Array.from(q15Renderable.svg.matchAll(new RegExp(`<circle cx="([0-9.-]+)" cy="([0-9.-]+)" r="[0-9.-]+" class="geo-(?:open-dot|fill)"[^>]*data-luoshu-(?:open|filled)-dot="${group}"`, 'g')))
+  .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+assert(Math.max(...luoshuPoints('four').map(point => point.y)) < Math.min(...luoshuPoints('three').map(point => point.y)), 'question 15 Luoshu four-dot group should sit above the left vertical three-dot group');
+assert(Math.min(...luoshuPoints('two').map(point => point.x)) > Math.max(...luoshuPoints('nine').map(point => point.x)), 'question 15 Luoshu two-dot group should sit to the right of the top nine-dot row');
 
 const q5Geometry = renderer.getFigureGeometry('q5-parallel-board');
 assert(q5Geometry, 'question 5 should expose a verifiable geometry model');

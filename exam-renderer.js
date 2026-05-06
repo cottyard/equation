@@ -186,7 +186,13 @@
         } else if (kind === 'C') {
           body = profilePolygon(x, y + 42, 130, 76, { 'data-front-view-profile': 'dovetail' });
         } else {
-          body = rect(x, y + 56, 146, 54, 'geo-shape') + line(x + 34, y + 56, x + 34, y + 110) + line(x + 88, y + 56, x + 88, y + 110, 'geo-dash') + line(x + 120, y + 56, x + 120, y + 110, 'geo-dash');
+          body = [
+            rect(x, y + 56, 146, 54, 'geo-shape'),
+            line(x + 34, y + 56, x + 34, y + 110, 'geo-line', { 'data-projection-d-visible-divider': 'left' }),
+            line(x + 69, y + 56, x + 69, y + 110, 'geo-line geo-dash', { 'data-projection-d-hidden-divider': 'left' }),
+            line(x + 104, y + 56, x + 104, y + 110, 'geo-line geo-dash', { 'data-projection-d-hidden-divider': 'right' }),
+            line(x + 120, y + 56, x + 120, y + 110, 'geo-line', { 'data-projection-d-visible-divider': 'right' }),
+          ].join('');
         }
         return `<g ${attrs({ 'data-projection-option': kind })}>${body}${text(x + 48, y + 143, label, 'geo-option-label')}</g>`;
       }
@@ -196,7 +202,7 @@
         optionShape(215, 42, model.options[0].label, model.options[0].id),
         optionShape(350, 22, model.options[1].label, model.options[1].id),
         optionShape(470, 25, model.options[2].label, model.options[2].id),
-        optionShape(615, 25, model.options[3].label, model.options[3].id),
+        optionShape(600, 25, model.options[3].label, model.options[3].id),
       ].join(''), {
         'aria-label': '燕尾榫几何示意与四个主视图选项',
         'data-figure-model': model.id,
@@ -260,16 +266,38 @@
       const model = getFigureModel('q15-magic-square');
       const modelsApi = getFigureModelApi();
       const relation = modelsApi.deriveMagicSquareRelation(model);
-      const beads = [
-        [65, 22], [53, 34], [77, 34],
-        [35, 60], [35, 84], [35, 108],
-        [98, 60], [98, 84], [98, 108],
-        [50, 138], [42, 148], [34, 158], [58, 148], [66, 158],
-        [112, 138], [104, 148], [96, 158], [120, 148], [128, 158],
-        [63, 89], [75, 89], [69, 79], [69, 99],
+      const openGroups = [
+        { id: 'nine', points: Array.from({ length: 9 }, (_, index) => [33 + index * 9, 58]) },
+        { id: 'three', points: [[26, 88], [26, 110], [26, 132]] },
+        { id: 'five', points: [[59, 101], [69, 101], [79, 101], [69, 91], [69, 111]] },
+        { id: 'seven', points: Array.from({ length: 7 }, (_, index) => [118, 76 + index * 10]) },
+        { id: 'one', points: [[69, 148]] },
+      ];
+      const filledGroups = [
+        { id: 'four', points: [[8, 46], [18, 56], [28, 66], [18, 76]] },
+        { id: 'two', points: [[112, 47], [126, 33]] },
+        { id: 'eight', points: [[18, 138], [28, 148], [38, 158], [48, 168], [11, 154], [21, 164], [31, 174], [41, 184]] },
+        { id: 'six', points: [[98, 139], [108, 149], [118, 159], [91, 153], [101, 163], [111, 173]] },
+      ];
+      const groupLines = [
+        poly('8,46 18,56 28,66 18,76 8,46', 'geo-thin', { 'data-luoshu-line': 'four' }),
+        line(33, 58, 105, 58, 'geo-thin', { 'data-luoshu-line': 'nine' }),
+        line(112, 47, 126, 33, 'geo-thin', { 'data-luoshu-line': 'two' }),
+        line(26, 88, 26, 132, 'geo-thin', { 'data-luoshu-line': 'three' }),
+        line(59, 101, 79, 101, 'geo-thin', { 'data-luoshu-line': 'five-horizontal' }),
+        line(69, 91, 69, 111, 'geo-thin', { 'data-luoshu-line': 'five-vertical' }),
+        line(118, 76, 118, 136, 'geo-thin', { 'data-luoshu-line': 'seven' }),
+        poly('18,138 28,148 38,158 48,168 41,184 31,174 21,164 11,154 18,138', 'geo-thin', { 'data-luoshu-line': 'eight' }),
+        poly('98,139 108,149 118,159 111,173 101,163 91,153 98,139', 'geo-thin', { 'data-luoshu-line': 'six' }),
       ];
       const luoshu = [
-        ...beads.map(([x, y]) => circle(x, y, 4, 'geo-fill')),
+        ...groupLines,
+        ...openGroups.flatMap(group => group.points.map(([x, y]) => (
+          circle(x, y, 4, 'geo-open-dot', { 'data-luoshu-open-dot': group.id, 'data-luoshu-group': group.id })
+        ))),
+        ...filledGroups.flatMap(group => group.points.map(([x, y]) => (
+          circle(x, y, 4, 'geo-fill', { 'data-luoshu-filled-dot': group.id })
+        ))),
         text(71, 18, '洛 书', 'geo-label'),
         text(65, 190, '图1', 'geo-caption'),
       ].join('');
