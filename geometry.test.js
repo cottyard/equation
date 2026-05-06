@@ -2,7 +2,7 @@ const { getGeometryProblem } = require('./geometry-problems.js');
 const { normalizeScene } = require('./geometry-dsl.js');
 const { verifySceneConstraints } = require('./geometry-verifier.js');
 const { compileSceneToGclc } = require('./geometry-compiler-gclc.js');
-const { compileSceneToJxgPlan } = require('./geometry-jsxgraph.js');
+const { compileSceneToJxgPlan, mountJxgScene } = require('./geometry-jsxgraph.js');
 
 function assert(condition, message) {
   if (!condition) {
@@ -103,6 +103,54 @@ assert(q20Plan.commands.some(command => command.kind === 'point' && command.id =
 assert(q20Plan.commands.some(command => command.kind === 'constructedPoint' && command.id === 'C' && command.construct.type === 'mirrorPoint'), 'JSXGraph plan should construct C dynamically');
 assert(q20Plan.commands.some(command => command.kind === 'constructedPoint' && command.id === 'D' && command.construct.type === 'midpoint'), 'JSXGraph plan should construct D dynamically');
 assert(q20Plan.commands.some(command => command.kind === 'constructedPoint' && command.id === 'E' && command.construct.type === 'midpoint'), 'JSXGraph plan should construct E dynamically');
+
+const previousJxg = global.JXG;
+const createdElements = [];
+global.JXG = {
+  JSXGraph: {
+    initBoard() {
+      return {
+        create(type, args, attributes) {
+          const element = {
+            type,
+            args,
+            attributes,
+            rendNode: { dataset: {} },
+            X: () => (typeof args[0] === 'function' ? args[0]() : args[0]),
+            Y: () => (typeof args[1] === 'function' ? args[1]() : args[1]),
+          };
+          createdElements.push(element);
+          return element;
+        },
+      };
+    },
+  },
+};
+mountJxgScene({ id: '', innerHTML: '', dataset: {} }, {
+  id: 'point-style',
+  viewport: { xmin: -1, ymin: -1, xmax: 3, ymax: 2 },
+  objects: [
+    { type: 'point', id: 'A', fixed: [0, 0], draggable: false },
+    { type: 'point', id: 'B', fixed: [1, 0], draggable: true },
+    { type: 'line', id: 'Axis', through: ['A', 'B'], visible: false },
+    { type: 'point', id: 'C', fixed: [1.5, 0], draggable: true, on: 'Axis' },
+  ],
+  view: { labels: ['A', 'B', 'C'], visibleSegments: [], angleMarkers: [], circles: [] },
+  constraints: [],
+});
+global.JXG = previousJxg;
+const pointElement = name => createdElements.find(element => element.attributes.name === name);
+assert(pointElement('A').attributes.size === 2, 'fixed points should render at the baseline point size');
+assert(pointElement('B').attributes.size === pointElement('A').attributes.size, 'draggable free points should match fixed point size');
+assert(pointElement('C').attributes.size === pointElement('A').attributes.size, 'draggable glider points should match fixed point size');
+assert(pointElement('B').attributes.fillColor === '#111827', 'draggable free points should use a darker fill color');
+assert(pointElement('C').attributes.fillColor === '#111827', 'draggable glider points should use a darker fill color');
+assert(pointElement('A').attributes.highlight === false, 'fixed points should not show a selected/highlight state');
+assert(pointElement('B').attributes.highlight === false, 'draggable free points should not show a selected/highlight state');
+assert(pointElement('C').attributes.highlight === false, 'draggable glider points should not show a selected/highlight state');
+assert(pointElement('A').attributes.tabindex === null, 'fixed points should not receive keyboard focus styling');
+assert(pointElement('B').attributes.tabindex === null, 'draggable free points should not receive keyboard focus styling');
+assert(pointElement('C').attributes.tabindex === null, 'draggable glider points should not receive keyboard focus styling');
 
 const q7Scene = normalizeScene(getGeometryProblem('q7-rhombus'));
 assert(q7Scene.id === 'q7-rhombus', 'question 7 should have a stable DSL scene id');

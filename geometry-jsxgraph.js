@@ -531,6 +531,24 @@
     };
   }
 
+  const POINT_SIZE = 2;
+  const DRAGGABLE_POINT_COLOR = '#111827';
+  const BASE_POINT_STYLE = {
+    size: POINT_SIZE,
+    highlight: false,
+    tabindex: null,
+  };
+
+  function pointStyle(draggable) {
+    return draggable
+      ? {
+        ...BASE_POINT_STYLE,
+        fillColor: DRAGGABLE_POINT_COLOR,
+        strokeColor: DRAGGABLE_POINT_COLOR,
+      }
+      : BASE_POINT_STYLE;
+  }
+
   function mountJxgScene(container, scene, options = {}) {
     if (!root.JXG) {
       container.innerHTML = options.fallbackHtml || '';
@@ -575,7 +593,7 @@
         created[command.id] = board.create('point', [command.x, command.y], {
           name: command.label ? command.id : '',
           fixed: !command.draggable,
-          size: command.draggable ? 3 : 2,
+          ...pointStyle(command.draggable),
           showInfobox: false,
           visible: command.visible,
         });
@@ -613,7 +631,7 @@
           ], {
             name: command.label ? command.id : '',
             fixed: true,
-            size: 2,
+            ...pointStyle(false),
             showInfobox: false,
             visible: command.visible,
           });
@@ -621,7 +639,7 @@
           created[command.id] = board.create('glider', [command.x, command.y, created[command.on]], {
             name: command.label ? command.id : '',
             fixed: !command.draggable,
-            size: command.draggable ? 3 : 2,
+            ...pointStyle(command.draggable),
             showInfobox: false,
             visible: command.visible,
           });
